@@ -1,0 +1,65 @@
+{
+  "name": "just-bash-mcp",
+  "version": "1.0.0",
+  "description": "MCP server providing a sandboxed bash environment using just-bash",
+  "type": "module",
+  "main": "./build/index.js",
+  "types": "./build/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "import": "./build/index.js"
+    }
+  },
+  "bin": {
+    "just-bash-mcp": "build/index.js"
+  },
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "dev": "npx tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "bash",
+    "sandbox",
+    "shell",
+    "ai",
+    "agent",
+    "claude",
+    "cursor",
+    "cline",
+    "roo-code",
+    "windsurf"
+  ],
+  "author": "dalist1",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dalist1/just-bash-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dalist1/just-bash-mcp/issues"
+  },
+  "homepage": "https://github.com/dalist1/just-bash-mcp#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "just-bash": "^1.0.1",
+    "zod": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.3",
+    "typescript": "^5.9.3"
+  }
+}

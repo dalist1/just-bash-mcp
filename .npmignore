@@ -1,0 +1,21 @@
+# Source files
+src/
+
+# Config files
+tsconfig.json
+.gitignore
+bun.lock
+
+# Development
+node_modules/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
