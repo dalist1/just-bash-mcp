@@ -265,13 +265,13 @@ Get information about the bash environment configuration.
 ## Supported Commands
 
 ### File Operations
-`cat`, `cp`, `ln`, `ls`, `mkdir`, `mv`, `readlink`, `rm`, `stat`, `touch`, `tree`
+`cat`, `cp`, `file`, `ln`, `ls`, `mkdir`, `mv`, `readlink`, `rm`, `stat`, `touch`, `tree`
 
 ### Text Processing
-`awk`, `base64`, `cut`, `diff`, `grep`, `head`, `jq`, `printf`, `sed`, `sort`, `tail`, `tr`, `uniq`, `wc`, `xargs`
+`awk`, `base64`, `comm`, `cut`, `diff`, `grep` (+ `egrep`, `fgrep`), `head`, `jq`, `md5sum`, `od`, `paste`, `printf`, `sed`, `sha1sum`, `sha256sum`, `sort`, `tac`, `tail`, `tr`, `uniq`, `wc`, `xargs`
 
 ### Navigation & Environment
-`basename`, `cd`, `dirname`, `du`, `echo`, `env`, `export`, `find`, `printenv`, `pwd`, `tee`
+`basename`, `cd`, `dirname`, `du`, `echo`, `env`, `export`, `find`, `hostname`, `printenv`, `pwd`, `tee`
 
 ### Shell Utilities
 `alias`, `bash`, `chmod`, `clear`, `date`, `expr`, `false`, `help`, `history`, `seq`, `sh`, `sleep`, `timeout`, `true`, `unalias`, `which`

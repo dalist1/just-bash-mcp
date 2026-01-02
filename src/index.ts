@@ -8,8 +8,11 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+import { z } from "zod/v4";
 import { Bash, OverlayFs, type NetworkConfig } from "just-bash";
+
+// Type helper for MCP SDK compatibility with Zod v4
+type AnyZodSchema = Parameters<typeof server.registerTool>[1]["inputSchema"];
 
 /** Supported HTTP methods for network requests */
 type HttpMethod = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "PATCH" | "OPTIONS";
@@ -154,9 +157,9 @@ server.registerTool(
       cwd: z.string().optional().describe("Working directory for the command"),
       env: z.record(z.string(), z.string()).optional().describe("Environment variables to set"),
       files: z.record(z.string(), z.string()).optional().describe("Files to create before execution (path -> content)"),
-    },
+    } as any,
   },
-  async ({ command, cwd, env, files }) => {
+  async ({ command, cwd, env, files }: { command: string; cwd?: string; env?: Record<string, string>; files?: Record<string, string> }) => {
     try {
       const bash = createBashInstance(files);
       const result = await bash.exec(command, { cwd, env });
@@ -206,9 +209,9 @@ server.registerTool(
       command: z.string().describe("The bash command to execute"),
       cwd: z.string().optional().describe("Working directory for the command"),
       env: z.record(z.string(), z.string()).optional().describe("Environment variables to set"),
-    },
+    } as any,
   },
-  async ({ command, cwd, env }) => {
+  async ({ command, cwd, env }: { command: string; cwd?: string; env?: Record<string, string> }) => {
     try {
       const bash = getPersistentBash();
       const result = await bash.exec(command, { cwd, env });
@@ -279,9 +282,9 @@ server.registerTool(
     inputSchema: {
       path: z.string().describe("The file path to write to"),
       content: z.string().describe("The content to write"),
-    },
+    } as any,
   },
-  async ({ path, content }) => {
+  async ({ path, content }: { path: string; content: string }) => {
     try {
       const bash = getPersistentBash();
       const result = await bash.exec(`cat > '${path}' << 'JUST_BASH_EOF'\n${content}\nJUST_BASH_EOF`);
@@ -330,9 +333,9 @@ server.registerTool(
     description: "Read content from a file in the persistent bash environment.",
     inputSchema: {
       path: z.string().describe("The file path to read"),
-    },
+    } as any,
   },
-  async ({ path }) => {
+  async ({ path }: { path: string }) => {
     try {
       const bash = getPersistentBash();
       const result = await bash.exec(`cat '${path}'`);
@@ -383,9 +386,9 @@ server.registerTool(
       path: z.string().optional().describe("The directory path to list (defaults to current directory)"),
       recursive: z.boolean().optional().describe("Whether to list recursively"),
       showHidden: z.boolean().optional().describe("Whether to show hidden files"),
-    },
+    } as any,
   },
-  async ({ path = ".", recursive = false, showHidden = false }) => {
+  async ({ path = ".", recursive = false, showHidden = false }: { path?: string; recursive?: boolean; showHidden?: boolean }) => {
     try {
       const bash = getPersistentBash();
       let cmd = "ls -l";
@@ -437,9 +440,9 @@ server.registerTool(
       allowedMethods: ALLOW_NETWORK ? ALLOWED_METHODS : null,
       executionLimits: buildExecutionLimits(),
       supportedCommands: [
-        "File Operations: cat, cp, ln, ls, mkdir, mv, readlink, rm, stat, touch, tree",
-        "Text Processing: awk, base64, cut, diff, grep, head, jq, printf, sed, sort, tail, tr, uniq, wc, xargs",
-        "Navigation & Environment: basename, cd, dirname, du, echo, env, export, find, printenv, pwd, tee",
+        "File Operations: cat, cp, file, ln, ls, mkdir, mv, readlink, rm, stat, touch, tree",
+        "Text Processing: awk, base64, comm, cut, diff, grep (+ egrep, fgrep), head, jq, md5sum, od, paste, printf, sed, sha1sum, sha256sum, sort, tac, tail, tr, uniq, wc, xargs",
+        "Navigation & Environment: basename, cd, dirname, du, echo, env, export, find, hostname, printenv, pwd, tee",
         "Shell Utilities: alias, bash, chmod, clear, date, expr, false, help, history, seq, sh, sleep, timeout, true, unalias, which",
         "Network Commands (if enabled): curl, html-to-markdown",
       ],
