@@ -9,7 +9,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod/v4";
-import { Bash, OverlayFs, type NetworkConfig } from "just-bash";
+import { Bash, OverlayFs, type NetworkConfig, getCommandNames, getNetworkCommandNames } from "just-bash";
 
 // Type helper for MCP SDK compatibility with Zod v4
 type AnyZodSchema = Parameters<typeof server.registerTool>[1]["inputSchema"];
@@ -439,9 +439,12 @@ server.registerTool(
       allowedUrlPrefixes: ALLOWED_URL_PREFIXES.length > 0 ? ALLOWED_URL_PREFIXES : null,
       allowedMethods: ALLOW_NETWORK ? ALLOWED_METHODS : null,
       executionLimits: buildExecutionLimits(),
+      availableCommands: getCommandNames(),
+      networkCommands: ALLOW_NETWORK ? getNetworkCommandNames() : [],
       supportedCommands: [
         "File Operations: cat, cp, file, ln, ls, mkdir, mv, readlink, rm, stat, touch, tree",
         "Text Processing: awk, base64, comm, cut, diff, grep (+ egrep, fgrep), head, jq, md5sum, od, paste, printf, sed, sha1sum, sha256sum, sort, tac, tail, tr, uniq, wc, xargs",
+        "Compression: gzip (+ gunzip, zcat)",
         "Navigation & Environment: basename, cd, dirname, du, echo, env, export, find, hostname, printenv, pwd, tee",
         "Shell Utilities: alias, bash, chmod, clear, date, expr, false, help, history, seq, sh, sleep, timeout, true, unalias, which",
         "Network Commands (if enabled): curl, html-to-markdown",
