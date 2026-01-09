@@ -36,6 +36,12 @@ const ALLOWED_URL_PREFIXES = process.env.JUST_BASH_ALLOWED_URLS?.split(",").filt
 /** Allowed HTTP methods for network requests */
 const ALLOWED_METHODS = (process.env.JUST_BASH_ALLOWED_METHODS?.split(",").filter(Boolean) || ["GET", "HEAD"]) as HttpMethod[];
 
+/** Maximum number of redirects to follow */
+const MAX_REDIRECTS = parseInt(process.env.JUST_BASH_MAX_REDIRECTS || "20", 10);
+
+/** Request timeout in milliseconds */
+const NETWORK_TIMEOUT_MS = parseInt(process.env.JUST_BASH_NETWORK_TIMEOUT_MS || "30000", 10);
+
 // ============================================================================
 // Execution limits from environment
 // ============================================================================
@@ -72,11 +78,17 @@ function buildNetworkConfig(): NetworkConfig | undefined {
     return {
       allowedUrlPrefixes: ALLOWED_URL_PREFIXES,
       allowedMethods: ALLOWED_METHODS,
+      maxRedirects: MAX_REDIRECTS,
+      timeoutMs: NETWORK_TIMEOUT_MS,
     };
   }
 
   // Full internet access if ALLOW_NETWORK is true but no prefixes specified
-  return { dangerouslyAllowFullInternetAccess: true };
+  return {
+    dangerouslyAllowFullInternetAccess: true,
+    maxRedirects: MAX_REDIRECTS,
+    timeoutMs: NETWORK_TIMEOUT_MS,
+  };
 }
 
 /**
@@ -90,6 +102,7 @@ function buildExecutionLimits() {
     maxLoopIterations: MAX_LOOP_ITERATIONS,
     maxAwkIterations: MAX_LOOP_ITERATIONS,
     maxSedIterations: MAX_LOOP_ITERATIONS,
+    maxJqIterations: MAX_LOOP_ITERATIONS,
   };
 }
 
@@ -442,11 +455,12 @@ server.registerTool(
       availableCommands: getCommandNames(),
       networkCommands: ALLOW_NETWORK ? getNetworkCommandNames() : [],
       supportedCommands: [
-        "File Operations: cat, cp, file, ln, ls, mkdir, mv, readlink, rm, stat, touch, tree",
-        "Text Processing: awk, base64, comm, cut, diff, grep (+ egrep, fgrep), head, jq, md5sum, od, paste, printf, sed, sha1sum, sha256sum, sort, tac, tail, tr, uniq, wc, xargs",
+        "File Operations: basename, cat, chmod, cp, dirname, du, file, find, ln, ls, mkdir, mv, od, pwd, readlink, rm, split, stat, touch, tree",
+        "Text Processing: awk, column, comm, cut, diff, expand, fold, grep (+ egrep, fgrep), head, join, jq, nl, paste, rev, sed, sort, strings, tac, tail, tr, unexpand, uniq, wc, xan, xargs, yq",
+        "Hashing & Encoding: base64, md5sum, sha1sum, sha256sum",
         "Compression: gzip (+ gunzip, zcat)",
-        "Navigation & Environment: basename, cd, dirname, du, echo, env, export, find, hostname, printenv, pwd, tee",
-        "Shell Utilities: alias, bash, chmod, clear, date, expr, false, help, history, seq, sh, sleep, timeout, true, unalias, which",
+        "Navigation & Environment: cd, echo, env, export, hostname, printenv, printf, tee",
+        "Shell Utilities: alias, bash, clear, date, expr, false, help, history, seq, sh, sleep, timeout, true, unalias, which",
         "Network Commands (if enabled): curl, html-to-markdown",
       ],
     };
