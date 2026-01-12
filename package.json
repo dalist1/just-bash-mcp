@@ -1,6 +1,6 @@
 {
   "name": "just-bash-mcp",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "MCP server providing a sandboxed bash environment using just-bash",
   "type": "module",
   "main": "./build/index.js",

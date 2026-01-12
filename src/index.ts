@@ -11,7 +11,7 @@ import {
 	OverlayFs,
 	ReadWriteFs,
 } from "just-bash";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 type HttpMethod =
 	| "GET"
@@ -58,7 +58,7 @@ const MAX_OUTPUT_LENGTH = Number.parseInt(
 
 const server = new McpServer({
 	name: "just-bash-mcp",
-	version: "2.0.0",
+			version: "2.0.1",
 });
 
 function buildNetworkConfig(): NetworkConfig | undefined {
@@ -483,7 +483,7 @@ server.registerTool(
 				: "in-memory";
 
 		const info = {
-			version: "2.0.0",
+	version: "2.0.1",
 			fsMode,
 			fsRoot: READ_WRITE_ROOT || OVERLAY_ROOT || null,
 			initialCwd: INITIAL_CWD,
@@ -524,4 +524,4 @@ server.registerTool(
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error("just-bash-mcp server v2.0.0 running on stdio");
+console.error("just-bash-mcp server v2.0.1 running on stdio");
