@@ -1,23 +1,18 @@
 #!/usr/bin/env node
-/**
- * @fileoverview MCP server providing a sandboxed bash environment using just-bash.
- * @author dalist1
- * @license Apache-2.0
- * @see https://github.com/dalist1/just-bash-mcp
- */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod/v4";
 import {
 	Bash,
-	OverlayFs,
-	type NetworkConfig,
+	type BashOptions,
 	getCommandNames,
 	getNetworkCommandNames,
+	type NetworkConfig,
+	OverlayFs,
+	ReadWriteFs,
 } from "just-bash";
+import { z } from "zod";
 
-/** Supported HTTP methods for network requests */
 type HttpMethod =
 	| "GET"
 	| "HEAD"
@@ -27,73 +22,45 @@ type HttpMethod =
 	| "PATCH"
 	| "OPTIONS";
 
-// ============================================================================
-// Configuration from environment variables
-// ============================================================================
-
-/** Path to real directory for overlay filesystem (read-only mount) */
 const OVERLAY_ROOT = process.env.JUST_BASH_OVERLAY_ROOT;
-
-/** Initial working directory for bash environment */
+const READ_WRITE_ROOT = process.env.JUST_BASH_READ_WRITE_ROOT;
 const INITIAL_CWD = process.env.JUST_BASH_CWD || "/home/user";
-
-/** Whether network access is enabled */
 const ALLOW_NETWORK = process.env.JUST_BASH_ALLOW_NETWORK === "true";
-
-/** Comma-separated list of allowed URL prefixes */
 const ALLOWED_URL_PREFIXES =
 	process.env.JUST_BASH_ALLOWED_URLS?.split(",").filter(Boolean) || [];
-
-/** Allowed HTTP methods for network requests */
 const ALLOWED_METHODS = (process.env.JUST_BASH_ALLOWED_METHODS?.split(
 	",",
 ).filter(Boolean) || ["GET", "HEAD"]) as HttpMethod[];
-
-/** Maximum number of redirects to follow */
-const MAX_REDIRECTS = parseInt(process.env.JUST_BASH_MAX_REDIRECTS || "20", 10);
-
-/** Request timeout in milliseconds */
-const NETWORK_TIMEOUT_MS = parseInt(
+const MAX_REDIRECTS = Number.parseInt(
+	process.env.JUST_BASH_MAX_REDIRECTS || "20",
+	10,
+);
+const NETWORK_TIMEOUT_MS = Number.parseInt(
 	process.env.JUST_BASH_NETWORK_TIMEOUT_MS || "30000",
 	10,
 );
-
-// ============================================================================
-// Execution limits from environment
-// ============================================================================
-
-/** Maximum function call/recursion depth */
-const MAX_CALL_DEPTH = parseInt(
+const MAX_CALL_DEPTH = Number.parseInt(
 	process.env.JUST_BASH_MAX_CALL_DEPTH || "100",
 	10,
 );
-
-/** Maximum number of commands per execution */
-const MAX_COMMAND_COUNT = parseInt(
+const MAX_COMMAND_COUNT = Number.parseInt(
 	process.env.JUST_BASH_MAX_COMMAND_COUNT || "10000",
 	10,
 );
-
-/** Maximum loop iterations */
-const MAX_LOOP_ITERATIONS = parseInt(
+const MAX_LOOP_ITERATIONS = Number.parseInt(
 	process.env.JUST_BASH_MAX_LOOP_ITERATIONS || "10000",
 	10,
 );
+const MAX_OUTPUT_LENGTH = Number.parseInt(
+	process.env.JUST_BASH_MAX_OUTPUT_LENGTH || "30000",
+	10,
+);
 
-// ============================================================================
-// MCP Server Setup
-// ============================================================================
-
-/** MCP server instance */
 const server = new McpServer({
 	name: "just-bash-mcp",
-	version: "1.0.0",
+	version: "2.0.0",
 });
 
-/**
- * Builds the network configuration based on environment variables.
- * @returns Network configuration object or undefined if network is disabled
- */
 function buildNetworkConfig(): NetworkConfig | undefined {
 	if (!ALLOW_NETWORK) {
 		return undefined;
@@ -108,7 +75,6 @@ function buildNetworkConfig(): NetworkConfig | undefined {
 		};
 	}
 
-	// Full internet access if ALLOW_NETWORK is true but no prefixes specified
 	return {
 		dangerouslyAllowFullInternetAccess: true,
 		maxRedirects: MAX_REDIRECTS,
@@ -116,11 +82,7 @@ function buildNetworkConfig(): NetworkConfig | undefined {
 	};
 }
 
-/**
- * Builds the execution limits configuration.
- * @returns Execution limits object with all limit values
- */
-function buildExecutionLimits() {
+function buildExecutionLimits(): BashOptions["executionLimits"] {
 	return {
 		maxCallDepth: MAX_CALL_DEPTH,
 		maxCommandCount: MAX_COMMAND_COUNT,
@@ -131,14 +93,20 @@ function buildExecutionLimits() {
 	};
 }
 
-/**
- * Creates a new Bash instance with optional overlay filesystem.
- * @param files - Optional initial files to create in the filesystem
- * @returns Configured Bash instance
- */
 function createBashInstance(files?: Record<string, string>): Bash {
 	const networkConfig = buildNetworkConfig();
 	const executionLimits = buildExecutionLimits();
+
+	if (READ_WRITE_ROOT) {
+		const rwfs = new ReadWriteFs({ root: READ_WRITE_ROOT });
+		return new Bash({
+			fs: rwfs,
+			cwd: READ_WRITE_ROOT,
+			network: networkConfig,
+			executionLimits,
+			files,
+		});
+	}
 
 	if (OVERLAY_ROOT) {
 		const overlay = new OverlayFs({ root: OVERLAY_ROOT });
@@ -159,17 +127,20 @@ function createBashInstance(files?: Record<string, string>): Bash {
 	});
 }
 
-// ============================================================================
-// Persistent Bash Instance
-// ============================================================================
+function truncateOutput(
+	output: string,
+	maxLength: number,
+	streamName: "stdout" | "stderr",
+): string {
+	if (output.length <= maxLength) {
+		return output;
+	}
+	const truncatedLength = output.length - maxLength;
+	return `${output.slice(0, maxLength)}\n\n[${streamName} truncated: ${truncatedLength} characters removed]`;
+}
 
-/** Persistent bash instance for stateful operations */
 let persistentBash: Bash | null = null;
 
-/**
- * Gets or creates the persistent Bash instance.
- * @returns The persistent Bash instance
- */
 function getPersistentBash(): Bash {
 	if (!persistentBash) {
 		persistentBash = createBashInstance();
@@ -177,15 +148,6 @@ function getPersistentBash(): Bash {
 	return persistentBash;
 }
 
-// ============================================================================
-// Tool Definitions
-// ============================================================================
-
-/**
- * Tool: bash_exec
- * Execute a bash command in a sandboxed environment.
- * Each execution is isolated - environment variables, functions, and cwd don't persist.
- */
 server.registerTool(
 	"bash_exec",
 	{
@@ -202,7 +164,7 @@ server.registerTool(
 				.record(z.string(), z.string())
 				.optional()
 				.describe("Files to create before execution (path -> content)"),
-		} as any,
+		},
 	},
 	async ({
 		command,
@@ -225,8 +187,16 @@ server.registerTool(
 						type: "text" as const,
 						text: JSON.stringify(
 							{
-								stdout: result.stdout,
-								stderr: result.stderr,
+								stdout: truncateOutput(
+									result.stdout,
+									MAX_OUTPUT_LENGTH,
+									"stdout",
+								),
+								stderr: truncateOutput(
+									result.stderr,
+									MAX_OUTPUT_LENGTH,
+									"stderr",
+								),
 								exitCode: result.exitCode,
 								env: result.env,
 							},
@@ -251,11 +221,6 @@ server.registerTool(
 	},
 );
 
-/**
- * Tool: bash_exec_persistent
- * Execute a bash command in a persistent sandboxed environment.
- * The filesystem persists across calls, but env vars, functions, and cwd are reset.
- */
 server.registerTool(
 	"bash_exec_persistent",
 	{
@@ -268,7 +233,7 @@ server.registerTool(
 				.record(z.string(), z.string())
 				.optional()
 				.describe("Environment variables to set"),
-		} as any,
+		},
 	},
 	async ({
 		command,
@@ -289,8 +254,16 @@ server.registerTool(
 						type: "text" as const,
 						text: JSON.stringify(
 							{
-								stdout: result.stdout,
-								stderr: result.stderr,
+								stdout: truncateOutput(
+									result.stdout,
+									MAX_OUTPUT_LENGTH,
+									"stdout",
+								),
+								stderr: truncateOutput(
+									result.stderr,
+									MAX_OUTPUT_LENGTH,
+									"stderr",
+								),
 								exitCode: result.exitCode,
 								env: result.env,
 							},
@@ -315,10 +288,6 @@ server.registerTool(
 	},
 );
 
-/**
- * Tool: bash_reset
- * Reset the persistent bash environment, clearing all files and state.
- */
 server.registerTool(
 	"bash_reset",
 	{
@@ -339,10 +308,6 @@ server.registerTool(
 	},
 );
 
-/**
- * Tool: bash_write_file
- * Write content to a file in the persistent bash environment.
- */
 server.registerTool(
 	"bash_write_file",
 	{
@@ -350,13 +315,14 @@ server.registerTool(
 		inputSchema: {
 			path: z.string().describe("The file path to write to"),
 			content: z.string().describe("The content to write"),
-		} as any,
+		},
 	},
 	async ({ path, content }: { path: string; content: string }) => {
 		try {
 			const bash = getPersistentBash();
+			const escapedContent = content.replace(/'/g, "'\\''");
 			const result = await bash.exec(
-				`cat > '${path}' << 'JUST_BASH_EOF'\n${content}\nJUST_BASH_EOF`,
+				`mkdir -p "$(dirname '${path}')" && cat > '${path}' << 'JUST_BASH_EOF'\n${escapedContent}\nJUST_BASH_EOF`,
 			);
 
 			if (result.exitCode !== 0) {
@@ -393,17 +359,13 @@ server.registerTool(
 	},
 );
 
-/**
- * Tool: bash_read_file
- * Read content from a file in the persistent bash environment.
- */
 server.registerTool(
 	"bash_read_file",
 	{
 		description: "Read content from a file in the persistent bash environment.",
 		inputSchema: {
 			path: z.string().describe("The file path to read"),
-		} as any,
+		},
 	},
 	async ({ path }: { path: string }) => {
 		try {
@@ -426,7 +388,7 @@ server.registerTool(
 				content: [
 					{
 						type: "text" as const,
-						text: result.stdout,
+						text: truncateOutput(result.stdout, MAX_OUTPUT_LENGTH, "stdout"),
 					},
 				],
 			};
@@ -444,10 +406,6 @@ server.registerTool(
 	},
 );
 
-/**
- * Tool: bash_list_files
- * List files and directories in the persistent bash environment.
- */
 server.registerTool(
 	"bash_list_files",
 	{
@@ -463,7 +421,7 @@ server.registerTool(
 				.boolean()
 				.optional()
 				.describe("Whether to show hidden files"),
-		} as any,
+		},
 	},
 	async ({
 		path = ".",
@@ -476,10 +434,15 @@ server.registerTool(
 	}) => {
 		try {
 			const bash = getPersistentBash();
-			let cmd = "ls -l";
-			if (showHidden) cmd += "a";
-			if (recursive) cmd = `find '${path}' -type f`;
-			else cmd += ` '${path}'`;
+			let cmd: string;
+
+			if (recursive) {
+				cmd = showHidden
+					? `find '${path}' -type f`
+					: `find '${path}' -type f ! -name '.*' ! -path '*/.*'`;
+			} else {
+				cmd = showHidden ? `ls -la '${path}'` : `ls -l '${path}'`;
+			}
 
 			const result = await bash.exec(cmd);
 
@@ -506,10 +469,6 @@ server.registerTool(
 	},
 );
 
-/**
- * Tool: bash_info
- * Get information about the bash environment configuration.
- */
 server.registerTool(
 	"bash_info",
 	{
@@ -517,26 +476,39 @@ server.registerTool(
 		inputSchema: {},
 	},
 	async () => {
+		const fsMode = READ_WRITE_ROOT
+			? "read-write"
+			: OVERLAY_ROOT
+				? "overlay"
+				: "in-memory";
+
 		const info = {
-			overlayRoot: OVERLAY_ROOT || null,
+			version: "2.0.0",
+			fsMode,
+			fsRoot: READ_WRITE_ROOT || OVERLAY_ROOT || null,
 			initialCwd: INITIAL_CWD,
 			networkEnabled: ALLOW_NETWORK,
 			allowedUrlPrefixes:
 				ALLOWED_URL_PREFIXES.length > 0 ? ALLOWED_URL_PREFIXES : null,
 			allowedMethods: ALLOW_NETWORK ? ALLOWED_METHODS : null,
+			maxOutputLength: MAX_OUTPUT_LENGTH,
 			executionLimits: buildExecutionLimits(),
 			availableCommands: getCommandNames(),
 			networkCommands: ALLOW_NETWORK ? getNetworkCommandNames() : [],
-			supportedCommands: [
-				"File Operations: basename, cat, chmod, cp, dirname, du, file, find, ln, ls, mkdir, mv, od, pwd, readlink, rm, split, stat, touch, tree",
-				"Text Processing: awk, column, comm, cut, diff, expand, fold, grep (+ egrep, fgrep), head, join, jq, nl, paste, rev, sed, sort, strings, tac, tail, tr, unexpand, uniq, wc, xan, xargs, yq",
-				"Hashing & Encoding: base64, md5sum, sha1sum, sha256sum",
-				"Compression: gzip (+ gunzip, zcat)",
-				"Database: sqlite3",
-				"Navigation & Environment: cd, echo, env, export, hostname, printenv, printf, tee",
-				"Shell Utilities: alias, bash, clear, date, expr, false, help, history, seq, sh, sleep, timeout, true, unalias, which",
-				"Network Commands (if enabled): curl, html-to-markdown",
-			],
+			commandCategories: {
+				fileOperations:
+					"cat, cp, file, ln, ls, mkdir, mv, readlink, rm, split, stat, touch, tree",
+				textProcessing:
+					"awk, base64, column, comm, cut, diff, expand, fold, grep (egrep, fgrep), head, join, md5sum, nl, od, paste, printf, rev, sed, sha1sum, sha256sum, sort, strings, tac, tail, tr, unexpand, uniq, wc, xargs",
+				dataProcessing:
+					"jq (JSON), sqlite3 (SQLite), xan (CSV), yq (YAML/XML/TOML/CSV)",
+				compression: "gzip (gunzip, zcat)",
+				navigation:
+					"basename, cd, dirname, du, echo, env, export, find, hostname, printenv, pwd, tee",
+				shellUtilities:
+					"alias, bash, chmod, clear, date, expr, false, help, history, seq, sh, sleep, timeout, true, unalias, which",
+				network: "curl, html-to-markdown (when network enabled)",
+			},
 		};
 
 		return {
@@ -550,11 +522,6 @@ server.registerTool(
 	},
 );
 
-// ============================================================================
-// Server Startup
-// ============================================================================
-
-/** Start the MCP server with stdio transport */
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error("just-bash-mcp server running on stdio");
+console.error("just-bash-mcp server v2.0.0 running on stdio");

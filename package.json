@@ -1,6 +1,6 @@
 {
   "name": "just-bash-mcp",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "description": "MCP server providing a sandboxed bash environment using just-bash",
   "type": "module",
   "main": "./build/index.js",
@@ -22,9 +22,12 @@
   "scripts": {
     "build": "tsc",
     "start": "node build/index.js",
-    "dev": "npx tsx src/index.ts",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "dev": "bun src/index.ts",
+    "typecheck": "bun tsc --noEmit",
+    "lint": "bunx @biomejs/biome@latest lint",
+    "format": "bunx @biomejs/biome@latest format --write",
+    "check": "bunx @biomejs/biome@latest check --write",
+    "prepublishOnly": "bun run build"
   },
   "keywords": [
     "mcp",
@@ -38,7 +41,9 @@
     "cursor",
     "cline",
     "roo-code",
-    "windsurf"
+    "windsurf",
+    "just-bash",
+    "vercel"
   ],
   "author": "dalist1",
   "license": "Apache-2.0",
@@ -55,10 +60,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
-    "just-bash": "^2.3.3",
+    "just-bash": "^2.4.1",
     "zod": "^4.3.5"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.3.11",
     "@types/node": "^25.0.6",
     "typescript": "^5.9.3"
   }
