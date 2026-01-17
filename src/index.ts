@@ -7,6 +7,9 @@ import {
 	type BashOptions,
 	getCommandNames,
 	getNetworkCommandNames,
+	InMemoryFs,
+	MountableFs,
+	type MountConfig,
 	type NetworkConfig,
 	OverlayFs,
 	ReadWriteFs,
@@ -24,6 +27,7 @@ type HttpMethod =
 
 const OVERLAY_ROOT = process.env.JUST_BASH_OVERLAY_ROOT;
 const READ_WRITE_ROOT = process.env.JUST_BASH_READ_WRITE_ROOT;
+const MOUNTS_CONFIG = process.env.JUST_BASH_MOUNTS;
 const INITIAL_CWD = process.env.JUST_BASH_CWD || "/home/user";
 const ALLOW_NETWORK = process.env.JUST_BASH_ALLOW_NETWORK === "true";
 const ALLOWED_URL_PREFIXES =
@@ -58,7 +62,7 @@ const MAX_OUTPUT_LENGTH = Number.parseInt(
 
 const server = new McpServer({
 	name: "just-bash-mcp",
-			version: "2.0.1",
+	version: "2.1.0",
 });
 
 function buildNetworkConfig(): NetworkConfig | undefined {
@@ -93,9 +97,44 @@ function buildExecutionLimits(): BashOptions["executionLimits"] {
 	};
 }
 
+function parseMountsConfig(): MountConfig[] {
+	if (!MOUNTS_CONFIG) return [];
+	try {
+		const parsed = JSON.parse(MOUNTS_CONFIG);
+		if (!Array.isArray(parsed)) return [];
+		return parsed.map(
+			(mount: { mountPoint: string; root: string; type?: string }) => {
+				const fsType = mount.type || "overlay";
+				const filesystem =
+					fsType === "readwrite"
+						? new ReadWriteFs({ root: mount.root })
+						: new OverlayFs({ root: mount.root });
+				return { mountPoint: mount.mountPoint, filesystem };
+			},
+		);
+	} catch {
+		return [];
+	}
+}
+
 function createBashInstance(files?: Record<string, string>): Bash {
 	const networkConfig = buildNetworkConfig();
 	const executionLimits = buildExecutionLimits();
+
+	const mounts = parseMountsConfig();
+	if (mounts.length > 0) {
+		const mountableFs = new MountableFs({
+			base: new InMemoryFs(),
+			mounts,
+		});
+		return new Bash({
+			fs: mountableFs,
+			cwd: INITIAL_CWD,
+			network: networkConfig,
+			executionLimits,
+			files,
+		});
+	}
 
 	if (READ_WRITE_ROOT) {
 		const rwfs = new ReadWriteFs({ root: READ_WRITE_ROOT });
@@ -476,14 +515,18 @@ server.registerTool(
 		inputSchema: {},
 	},
 	async () => {
-		const fsMode = READ_WRITE_ROOT
-			? "read-write"
-			: OVERLAY_ROOT
-				? "overlay"
-				: "in-memory";
+		const mounts = parseMountsConfig();
+		const fsMode =
+			mounts.length > 0
+				? "mountable"
+				: READ_WRITE_ROOT
+					? "read-write"
+					: OVERLAY_ROOT
+						? "overlay"
+						: "in-memory";
 
 		const info = {
-	version: "2.0.1",
+			version: "2.1.0",
 			fsMode,
 			fsRoot: READ_WRITE_ROOT || OVERLAY_ROOT || null,
 			initialCwd: INITIAL_CWD,
@@ -499,10 +542,10 @@ server.registerTool(
 				fileOperations:
 					"cat, cp, file, ln, ls, mkdir, mv, readlink, rm, split, stat, touch, tree",
 				textProcessing:
-					"awk, base64, column, comm, cut, diff, expand, fold, grep (egrep, fgrep), head, join, md5sum, nl, od, paste, printf, rev, sed, sha1sum, sha256sum, sort, strings, tac, tail, tr, unexpand, uniq, wc, xargs",
+					"awk, base64, column, comm, cut, diff, expand, fold, grep (egrep, fgrep), head, join, md5sum, nl, od, paste, printf, rev, rg (ripgrep), sed, sha1sum, sha256sum, sort, strings, tac, tail, tr, unexpand, uniq, wc, xargs",
 				dataProcessing:
 					"jq (JSON), sqlite3 (SQLite), xan (CSV), yq (YAML/XML/TOML/CSV)",
-				compression: "gzip (gunzip, zcat)",
+				compression: "gzip (gunzip, zcat), tar",
 				navigation:
 					"basename, cd, dirname, du, echo, env, export, find, hostname, printenv, pwd, tee",
 				shellUtilities:
@@ -524,4 +567,4 @@ server.registerTool(
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error("just-bash-mcp server v2.0.1 running on stdio");
+console.error("just-bash-mcp server v2.1.0 running on stdio");
