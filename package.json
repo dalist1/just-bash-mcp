@@ -1,6 +1,6 @@
 {
 	"name": "just-bash-mcp",
-	"version": "2.1.0",
+	"version": "2.6.0",
 	"description": "MCP server providing a sandboxed bash environment using just-bash",
 	"type": "module",
 	"main": "./build/index.js",
@@ -60,7 +60,7 @@
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.25.2",
-		"just-bash": "^2.5.2",
+		"just-bash": "^2.7.0",
 		"zod": "^4.3.5"
 	},
 	"devDependencies": {

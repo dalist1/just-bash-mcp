@@ -4,17 +4,34 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
 	Bash,
+	type BashLogger,
 	type BashOptions,
+	type CustomCommand,
+	defineCommand,
 	getCommandNames,
 	getNetworkCommandNames,
 	InMemoryFs,
+	type LazyCommand,
 	MountableFs,
 	type MountConfig,
+	NetworkAccessDeniedError,
 	type NetworkConfig,
 	OverlayFs,
 	ReadWriteFs,
+	RedirectNotAllowedError,
+	TooManyRedirectsError,
 } from "just-bash";
 import { z } from "zod/v4";
+
+// TraceEvent interface for performance profiling (matches just-bash internal type)
+interface TraceEvent {
+	category: string;
+	name: string;
+	durationMs: number;
+	details?: Record<string, unknown>;
+}
+
+type TraceCallback = (event: TraceEvent) => void;
 
 type HttpMethod =
 	| "GET"
@@ -55,15 +72,47 @@ const MAX_LOOP_ITERATIONS = Number.parseInt(
 	process.env.JUST_BASH_MAX_LOOP_ITERATIONS || "10000",
 	10,
 );
+const MAX_SQLITE_TIMEOUT_MS = Number.parseInt(
+	process.env.JUST_BASH_MAX_SQLITE_TIMEOUT_MS || "5000",
+	10,
+);
+const MAX_PYTHON_TIMEOUT_MS = Number.parseInt(
+	process.env.JUST_BASH_MAX_PYTHON_TIMEOUT_MS || "30000",
+	10,
+);
 const MAX_OUTPUT_LENGTH = Number.parseInt(
 	process.env.JUST_BASH_MAX_OUTPUT_LENGTH || "30000",
 	10,
 );
+const ENABLE_LOGGING = process.env.JUST_BASH_ENABLE_LOGGING === "true";
+const ENABLE_TRACING = process.env.JUST_BASH_ENABLE_TRACING === "true";
 
 const server = new McpServer({
 	name: "just-bash-mcp",
-	version: "2.1.0",
+	version: "2.6.0",
 });
+
+// Optional logger for bash execution
+const bashLogger: BashLogger | undefined = ENABLE_LOGGING
+	? {
+			info(message: string, data?: Record<string, unknown>): void {
+				console.error(`[just-bash] INFO: ${message}`, data || "");
+			},
+			debug(message: string, data?: Record<string, unknown>): void {
+				console.error(`[just-bash] DEBUG: ${message}`, data || "");
+			},
+		}
+	: undefined;
+
+// Optional trace callback for performance profiling
+const traceCallback: TraceCallback | undefined = ENABLE_TRACING
+	? (event: TraceEvent) => {
+			console.error(
+				`[just-bash] TRACE: ${event.category}/${event.name} ${event.durationMs}ms`,
+				event.details ? JSON.stringify(event.details) : "",
+			);
+		}
+	: undefined;
 
 function buildNetworkConfig(): NetworkConfig | undefined {
 	if (!ALLOW_NETWORK) {
@@ -86,7 +135,7 @@ function buildNetworkConfig(): NetworkConfig | undefined {
 	};
 }
 
-function buildExecutionLimits(): BashOptions["executionLimits"] {
+function buildExecutionLimits(): NonNullable<BashOptions["executionLimits"]> {
 	return {
 		maxCallDepth: MAX_CALL_DEPTH,
 		maxCommandCount: MAX_COMMAND_COUNT,
@@ -94,6 +143,8 @@ function buildExecutionLimits(): BashOptions["executionLimits"] {
 		maxAwkIterations: MAX_LOOP_ITERATIONS,
 		maxSedIterations: MAX_LOOP_ITERATIONS,
 		maxJqIterations: MAX_LOOP_ITERATIONS,
+		maxSqliteTimeoutMs: MAX_SQLITE_TIMEOUT_MS,
+		maxPythonTimeoutMs: MAX_PYTHON_TIMEOUT_MS,
 	};
 }
 
@@ -117,9 +168,21 @@ function parseMountsConfig(): MountConfig[] {
 	}
 }
 
-function createBashInstance(files?: Record<string, string>): Bash {
+function createBashInstance(
+	files?: Record<string, string>,
+	customCommands?: CustomCommand[],
+): Bash {
 	const networkConfig = buildNetworkConfig();
 	const executionLimits = buildExecutionLimits();
+
+	const baseOptions: BashOptions = {
+		network: networkConfig,
+		executionLimits,
+		files,
+		logger: bashLogger,
+		trace: traceCallback,
+		customCommands,
+	};
 
 	const mounts = parseMountsConfig();
 	if (mounts.length > 0) {
@@ -128,41 +191,33 @@ function createBashInstance(files?: Record<string, string>): Bash {
 			mounts,
 		});
 		return new Bash({
+			...baseOptions,
 			fs: mountableFs,
 			cwd: INITIAL_CWD,
-			network: networkConfig,
-			executionLimits,
-			files,
 		});
 	}
 
 	if (READ_WRITE_ROOT) {
 		const rwfs = new ReadWriteFs({ root: READ_WRITE_ROOT });
 		return new Bash({
+			...baseOptions,
 			fs: rwfs,
 			cwd: READ_WRITE_ROOT,
-			network: networkConfig,
-			executionLimits,
-			files,
 		});
 	}
 
 	if (OVERLAY_ROOT) {
 		const overlay = new OverlayFs({ root: OVERLAY_ROOT });
 		return new Bash({
+			...baseOptions,
 			fs: overlay,
 			cwd: overlay.getMountPoint(),
-			network: networkConfig,
-			executionLimits,
-			files,
 		});
 	}
 
 	return new Bash({
+		...baseOptions,
 		cwd: INITIAL_CWD,
-		network: networkConfig,
-		executionLimits,
-		files,
 	});
 }
 
@@ -203,6 +258,12 @@ server.registerTool(
 				.record(z.string(), z.string())
 				.optional()
 				.describe("Files to create before execution (path -> content)"),
+			rawScript: z
+				.boolean()
+				.optional()
+				.describe(
+					"If true, skip normalizing the script (preserves leading whitespace). Useful for here-docs.",
+				),
 		},
 	},
 	async ({
@@ -210,15 +271,17 @@ server.registerTool(
 		cwd,
 		env,
 		files,
+		rawScript,
 	}: {
 		command: string;
 		cwd?: string;
 		env?: Record<string, string>;
 		files?: Record<string, string>;
+		rawScript?: boolean;
 	}) => {
 		try {
 			const bash = createBashInstance(files);
-			const result = await bash.exec(command, { cwd, env });
+			const result = await bash.exec(command, { cwd, env, rawScript });
 
 			return {
 				content: [
@@ -272,20 +335,28 @@ server.registerTool(
 				.record(z.string(), z.string())
 				.optional()
 				.describe("Environment variables to set"),
+			rawScript: z
+				.boolean()
+				.optional()
+				.describe(
+					"If true, skip normalizing the script (preserves leading whitespace). Useful for here-docs.",
+				),
 		},
 	},
 	async ({
 		command,
 		cwd,
 		env,
+		rawScript,
 	}: {
 		command: string;
 		cwd?: string;
 		env?: Record<string, string>;
+		rawScript?: boolean;
 	}) => {
 		try {
 			const bash = getPersistentBash();
-			const result = await bash.exec(command, { cwd, env });
+			const result = await bash.exec(command, { cwd, env, rawScript });
 
 			return {
 				content: [
@@ -526,7 +597,8 @@ server.registerTool(
 						: "in-memory";
 
 		const info = {
-			version: "2.1.0",
+			version: "2.6.0",
+			upstreamVersion: "2.7.0",
 			fsMode,
 			fsRoot: READ_WRITE_ROOT || OVERLAY_ROOT || null,
 			initialCwd: INITIAL_CWD,
@@ -535,22 +607,32 @@ server.registerTool(
 				ALLOWED_URL_PREFIXES.length > 0 ? ALLOWED_URL_PREFIXES : null,
 			allowedMethods: ALLOW_NETWORK ? ALLOWED_METHODS : null,
 			maxOutputLength: MAX_OUTPUT_LENGTH,
+			loggingEnabled: ENABLE_LOGGING,
+			tracingEnabled: ENABLE_TRACING,
 			executionLimits: buildExecutionLimits(),
 			availableCommands: getCommandNames(),
 			networkCommands: ALLOW_NETWORK ? getNetworkCommandNames() : [],
 			commandCategories: {
 				fileOperations:
-					"cat, cp, file, ln, ls, mkdir, mv, readlink, rm, split, stat, touch, tree",
+					"cat, cp, file, ln, ls, mkdir, mv, readlink, rm, rmdir, split, stat, touch, tree",
 				textProcessing:
 					"awk, base64, column, comm, cut, diff, expand, fold, grep (egrep, fgrep), head, join, md5sum, nl, od, paste, printf, rev, rg (ripgrep), sed, sha1sum, sha256sum, sort, strings, tac, tail, tr, unexpand, uniq, wc, xargs",
 				dataProcessing:
-					"jq (JSON), sqlite3 (SQLite), xan (CSV), yq (YAML/XML/TOML/CSV)",
+					"jq (JSON), python3/python (Python via Pyodide), sqlite3 (SQLite), xan (CSV), yq (YAML/XML/TOML/CSV)",
 				compression: "gzip (gunzip, zcat), tar",
 				navigation:
-					"basename, cd, dirname, du, echo, env, export, find, hostname, printenv, pwd, tee",
+					"basename, cd, dirname, du, echo, env, export, find, hostname, printenv, pwd, tee, whoami",
 				shellUtilities:
-					"alias, bash, chmod, clear, date, expr, false, help, history, seq, sh, sleep, timeout, true, unalias, which",
+					"alias, bash, chmod, clear, date, expr, false, help, history, seq, sh, sleep, time, timeout, true, unalias, which",
 				network: "curl, html-to-markdown (when network enabled)",
+			},
+			features: {
+				customCommands:
+					"Define custom TypeScript commands using defineCommand()",
+				rawScript:
+					"Preserve leading whitespace in scripts (useful for here-docs)",
+				logger: "Optional execution logging via BashLogger interface",
+				trace: "Performance profiling via TraceCallback",
 			},
 		};
 
@@ -567,4 +649,4 @@ server.registerTool(
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error("just-bash-mcp server v2.1.0 running on stdio");
+console.error("just-bash-mcp server v2.6.0 running on stdio");
