@@ -5,12 +5,8 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
-import { createErrorResponse, formatExecResult } from "../utils/index.js";
-import {
-	createBashInstance,
-	getPersistentBash,
-	resetPersistentBash,
-} from "./bash-instance.js";
+import { createErrorResponse, formatExecResult } from "../utils/index.ts";
+import { createBashInstance, getPersistentBash, resetPersistentBash } from "./bash-instance.ts";
 
 /**
  * Register bash execution tools with the MCP server
@@ -26,10 +22,7 @@ export function registerExecTools(server: McpServer): void {
 				"Execute a bash command in a sandboxed environment. Each execution is isolated - environment variables, functions, and cwd don't persist across calls (filesystem does).",
 			inputSchema: {
 				command: z.string().describe("The bash command to execute"),
-				cwd: z
-					.string()
-					.optional()
-					.describe("Working directory for the command"),
+				cwd: z.string().optional().describe("Working directory for the command"),
 				env: z
 					.record(z.string(), z.string())
 					.optional()
@@ -37,9 +30,7 @@ export function registerExecTools(server: McpServer): void {
 				initialEnv: z
 					.record(z.string(), z.string())
 					.optional()
-					.describe(
-						"Initial environment variables to set when creating the bash instance",
-					),
+					.describe("Initial environment variables to set when creating the bash instance"),
 				files: z
 					.record(z.string(), z.string())
 					.optional()
@@ -87,14 +78,8 @@ export function registerExecTools(server: McpServer): void {
 				"Execute a bash command in a persistent sandboxed environment. The filesystem persists across calls, but env vars, functions, and cwd are reset each call.",
 			inputSchema: {
 				command: z.string().describe("The bash command to execute"),
-				cwd: z
-					.string()
-					.optional()
-					.describe("Working directory for the command"),
-				env: z
-					.record(z.string(), z.string())
-					.optional()
-					.describe("Environment variables to set"),
+				cwd: z.string().optional().describe("Working directory for the command"),
+				env: z.record(z.string(), z.string()).optional().describe("Environment variables to set"),
 				rawScript: z
 					.boolean()
 					.optional()
@@ -130,8 +115,7 @@ export function registerExecTools(server: McpServer): void {
 	server.registerTool(
 		"bash_reset",
 		{
-			description:
-				"Reset the persistent bash environment, clearing all files and state.",
+			description: "Reset the persistent bash environment, clearing all files and state.",
 			inputSchema: {},
 		},
 		async () => {

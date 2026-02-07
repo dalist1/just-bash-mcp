@@ -2,7 +2,7 @@
  * Utility functions for just-bash-mcp
  */
 
-import { config } from "../config/index.js";
+import { config } from "../config/index.ts";
 
 /**
  * Truncate output to maximum length with notification message

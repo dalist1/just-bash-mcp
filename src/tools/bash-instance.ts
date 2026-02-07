@@ -22,7 +22,7 @@ import {
 	config,
 	parseMountsConfig,
 	traceCallback,
-} from "../config/index.js";
+} from "../config/index.ts";
 
 // ============================================================================
 // Bash Instance Factory
@@ -48,6 +48,8 @@ export function createBashInstance(
 		trace: traceCallback,
 		customCommands,
 		commands: config.ALLOWED_COMMANDS,
+		python: config.ENABLE_PYTHON,
+		defenseInDepth: config.ENABLE_DEFENSE_IN_DEPTH,
 	};
 
 	// Check for mountable filesystem configuration
@@ -66,7 +68,12 @@ export function createBashInstance(
 
 	// Check for read-write filesystem configuration
 	if (config.READ_WRITE_ROOT) {
-		const rwfs = new ReadWriteFs({ root: config.READ_WRITE_ROOT });
+		const rwfs = new ReadWriteFs({
+			root: config.READ_WRITE_ROOT,
+			...(config.MAX_FILE_READ_SIZE !== undefined && {
+				maxFileReadSize: config.MAX_FILE_READ_SIZE,
+			}),
+		});
 		return new Bash({
 			...baseOptions,
 			fs: rwfs,
@@ -76,7 +83,13 @@ export function createBashInstance(
 
 	// Check for overlay filesystem configuration
 	if (config.OVERLAY_ROOT) {
-		const overlay = new OverlayFs({ root: config.OVERLAY_ROOT });
+		const overlay = new OverlayFs({
+			root: config.OVERLAY_ROOT,
+			readOnly: config.OVERLAY_READ_ONLY,
+			...(config.MAX_FILE_READ_SIZE !== undefined && {
+				maxFileReadSize: config.MAX_FILE_READ_SIZE,
+			}),
+		});
 		return new Bash({
 			...baseOptions,
 			fs: overlay,
@@ -129,6 +142,10 @@ export async function getPersistentSandbox(): Promise<Sandbox> {
 		const options: SandboxOptions = {
 			cwd: config.INITIAL_CWD,
 			network: networkConfig,
+			maxCallDepth: config.MAX_CALL_DEPTH,
+			maxCommandCount: config.MAX_COMMAND_COUNT,
+			maxLoopIterations: config.MAX_LOOP_ITERATIONS,
+			...(config.OVERLAY_ROOT && { overlayRoot: config.OVERLAY_ROOT }),
 		};
 		persistentSandbox = await Sandbox.create(options);
 	}

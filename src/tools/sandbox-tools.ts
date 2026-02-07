@@ -5,17 +5,14 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
-import { config } from "../config/index.js";
+import { config } from "../config/index.ts";
 import {
 	createErrorResponse,
 	createJsonResponse,
 	createSuccessResponse,
 	truncateOutput,
-} from "../utils/index.js";
-import {
-	getPersistentSandbox,
-	resetPersistentSandbox,
-} from "./bash-instance.js";
+} from "../utils/index.ts";
+import { getPersistentSandbox, resetPersistentSandbox } from "./bash-instance.ts";
 
 /**
  * Register Vercel Sandbox compatible tools with the MCP server
@@ -31,14 +28,8 @@ export function registerSandboxTools(server: McpServer): void {
 				"Run a command in a Vercel Sandbox compatible environment. The sandbox persists across calls.",
 			inputSchema: {
 				command: z.string().describe("The command to execute"),
-				cwd: z
-					.string()
-					.optional()
-					.describe("Working directory for the command"),
-				env: z
-					.record(z.string(), z.string())
-					.optional()
-					.describe("Environment variables to set"),
+				cwd: z.string().optional().describe("Working directory for the command"),
+				env: z.record(z.string(), z.string()).optional().describe("Environment variables to set"),
 			},
 		},
 		async ({
@@ -79,9 +70,7 @@ export function registerSandboxTools(server: McpServer): void {
 		{
 			description: "Write multiple files to the sandbox environment at once.",
 			inputSchema: {
-				files: z
-					.record(z.string(), z.string())
-					.describe("Files to write (path -> content)"),
+				files: z.record(z.string(), z.string()).describe("Files to write (path -> content)"),
 			},
 		},
 		async ({ files }: { files: Record<string, string> }) => {
@@ -143,13 +132,7 @@ export function registerSandboxTools(server: McpServer): void {
 					.describe("Create parent directories if needed (default: true)"),
 			},
 		},
-		async ({
-			path,
-			recursive = true,
-		}: {
-			path: string;
-			recursive?: boolean;
-		}) => {
+		async ({ path, recursive = true }: { path: string; recursive?: boolean }) => {
 			try {
 				const sandbox = await getPersistentSandbox();
 				await sandbox.mkDir(path, { recursive });
@@ -167,8 +150,7 @@ export function registerSandboxTools(server: McpServer): void {
 	server.registerTool(
 		"bash_sandbox_reset",
 		{
-			description:
-				"Reset the sandbox environment, clearing all files and state.",
+			description: "Reset the sandbox environment, clearing all files and state.",
 			inputSchema: {},
 		},
 		async () => {

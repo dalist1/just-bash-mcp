@@ -5,10 +5,10 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { registerExecTools } from "./exec-tools.js";
-import { registerFileTools } from "./file-tools.js";
-import { registerInfoTools } from "./info-tools.js";
-import { registerSandboxTools } from "./sandbox-tools.js";
+import { registerExecTools } from "./exec-tools.ts";
+import { registerFileTools } from "./file-tools.ts";
+import { registerInfoTools } from "./info-tools.ts";
+import { registerSandboxTools } from "./sandbox-tools.ts";
 
 // Re-export bash instance utilities
 export {
@@ -17,12 +17,12 @@ export {
 	getPersistentSandbox,
 	resetPersistentBash,
 	resetPersistentSandbox,
-} from "./bash-instance.js";
+} from "./bash-instance.ts";
 // Re-export individual registrations for fine-grained control
-export { registerExecTools } from "./exec-tools.js";
-export { registerFileTools } from "./file-tools.js";
-export { registerInfoTools } from "./info-tools.js";
-export { registerSandboxTools } from "./sandbox-tools.js";
+export { registerExecTools } from "./exec-tools.ts";
+export { registerFileTools } from "./file-tools.ts";
+export { registerInfoTools } from "./info-tools.ts";
+export { registerSandboxTools } from "./sandbox-tools.ts";
 
 /**
  * Register all MCP tools with the server

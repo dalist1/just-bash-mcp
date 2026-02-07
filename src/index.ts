@@ -13,8 +13,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
-import { config } from "./config/index.js";
-import { registerAllTools } from "./tools/index.js";
+import { config } from "./config/index.ts";
+import { registerAllTools } from "./tools/index.ts";
 
 // ============================================================================
 // Server Initialization
@@ -34,7 +34,3 @@ registerAllTools(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-
-console.error(
-	`${config.SERVER_NAME} server v${config.VERSION} running on stdio`,
-);

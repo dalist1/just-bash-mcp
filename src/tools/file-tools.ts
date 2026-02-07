@@ -5,13 +5,9 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
-import { config } from "../config/index.js";
-import {
-	createErrorResponse,
-	createSuccessResponse,
-	truncateOutput,
-} from "../utils/index.js";
-import { getPersistentBash } from "./bash-instance.js";
+import { config } from "../config/index.ts";
+import { createErrorResponse, createSuccessResponse, truncateOutput } from "../utils/index.ts";
+import { getPersistentBash } from "./bash-instance.ts";
 
 /**
  * Register file operation tools with the MCP server
@@ -23,8 +19,7 @@ export function registerFileTools(server: McpServer): void {
 	server.registerTool(
 		"bash_write_file",
 		{
-			description:
-				"Write content to a file in the persistent bash environment.",
+			description: "Write content to a file in the persistent bash environment.",
 			inputSchema: {
 				path: z.string().describe("The file path to write to"),
 				content: z.string().describe("The content to write"),
@@ -50,9 +45,7 @@ export function registerFileTools(server: McpServer): void {
 					};
 				}
 
-				return createSuccessResponse(
-					`Successfully wrote ${content.length} bytes to ${path}`,
-				);
+				return createSuccessResponse(`Successfully wrote ${content.length} bytes to ${path}`);
 			} catch (error) {
 				return createErrorResponse(error, "Write error");
 			}
@@ -65,8 +58,7 @@ export function registerFileTools(server: McpServer): void {
 	server.registerTool(
 		"bash_read_file",
 		{
-			description:
-				"Read content from a file in the persistent bash environment.",
+			description: "Read content from a file in the persistent bash environment.",
 			inputSchema: {
 				path: z.string().describe("The file path to read"),
 			},
@@ -92,11 +84,7 @@ export function registerFileTools(server: McpServer): void {
 					content: [
 						{
 							type: "text" as const,
-							text: truncateOutput(
-								result.stdout,
-								config.MAX_OUTPUT_LENGTH,
-								"stdout",
-							),
+							text: truncateOutput(result.stdout, config.MAX_OUTPUT_LENGTH, "stdout"),
 						},
 					],
 				};
@@ -112,23 +100,14 @@ export function registerFileTools(server: McpServer): void {
 	server.registerTool(
 		"bash_list_files",
 		{
-			description:
-				"List files and directories in the persistent bash environment.",
+			description: "List files and directories in the persistent bash environment.",
 			inputSchema: {
 				path: z
 					.string()
 					.optional()
-					.describe(
-						"The directory path to list (defaults to current directory)",
-					),
-				recursive: z
-					.boolean()
-					.optional()
-					.describe("Whether to list recursively"),
-				showHidden: z
-					.boolean()
-					.optional()
-					.describe("Whether to show hidden files"),
+					.describe("The directory path to list (defaults to current directory)"),
+				recursive: z.boolean().optional().describe("Whether to list recursively"),
+				showHidden: z.boolean().optional().describe("Whether to show hidden files"),
 			},
 		},
 		async ({
@@ -218,9 +197,7 @@ export function registerFileTools(server: McpServer): void {
 				const bash = getPersistentBash();
 				await bash.writeFile(path, content);
 
-				return createSuccessResponse(
-					`Successfully wrote ${content.length} bytes to ${path}`,
-				);
+				return createSuccessResponse(`Successfully wrote ${content.length} bytes to ${path}`);
 			} catch (error) {
 				return createErrorResponse(error, "Write error");
 			}

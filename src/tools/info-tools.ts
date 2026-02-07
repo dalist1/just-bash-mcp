@@ -3,11 +3,15 @@
  * Tools for getting information about the bash environment
  */
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
 	type CommandName,
 	getCommandNames,
 	getNetworkCommandNames,
+	getPythonCommandNames,
 } from "just-bash";
 import {
 	buildExecutionLimits,
@@ -16,9 +20,25 @@ import {
 	ENVIRONMENT_VARIABLES,
 	FEATURES,
 	parseMountsConfig,
-} from "../config/index.js";
-import { createErrorResponse, createJsonResponse } from "../utils/index.js";
-import { getPersistentBash } from "./bash-instance.js";
+} from "../config/index.ts";
+import { createErrorResponse, createJsonResponse } from "../utils/index.ts";
+import { getPersistentBash } from "./bash-instance.ts";
+
+function getUpstreamVersion(): string {
+	try {
+		// Resolve the just-bash package directory relative to this module
+		const __dirname = dirname(fileURLToPath(import.meta.url));
+		const pkgPath = join(__dirname, "..", "..", "node_modules", "just-bash", "package.json");
+		const pkg: { version: string } = JSON.parse(readFileSync(pkgPath, "utf-8")) as {
+			version: string;
+		};
+		return pkg.version;
+	} catch {
+		return "unknown";
+	}
+}
+
+const UPSTREAM_VERSION = getUpstreamVersion();
 
 /**
  * Register information tools with the MCP server
@@ -47,34 +67,33 @@ export function registerInfoTools(server: McpServer): void {
 			// Get actual available commands (respects ALLOWED_COMMANDS filter)
 			const allBuiltinCommands = getCommandNames();
 			const availableCommands = config.ALLOWED_COMMANDS
-				? allBuiltinCommands.filter((cmd) =>
-						config.ALLOWED_COMMANDS?.includes(cmd as CommandName),
-					)
+				? allBuiltinCommands.filter((cmd) => config.ALLOWED_COMMANDS?.includes(cmd as CommandName))
 				: allBuiltinCommands;
 
 			const info = {
 				version: config.VERSION,
-				upstreamVersion: config.VERSION,
+				upstreamVersion: UPSTREAM_VERSION,
 				fsMode,
 				fsRoot: config.READ_WRITE_ROOT || config.OVERLAY_ROOT || null,
-				mounts:
-					mounts.length > 0
-						? mounts.map((m) => ({ mountPoint: m.mountPoint }))
-						: null,
+				overlayReadOnly: config.OVERLAY_ROOT ? config.OVERLAY_READ_ONLY : null,
+				mounts: mounts.length > 0 ? mounts.map((m) => ({ mountPoint: m.mountPoint })) : null,
 				initialCwd: config.INITIAL_CWD,
 				networkEnabled: config.ALLOW_NETWORK,
 				allowedUrlPrefixes:
-					config.ALLOWED_URL_PREFIXES.length > 0
-						? config.ALLOWED_URL_PREFIXES
-						: null,
+					config.ALLOWED_URL_PREFIXES.length > 0 ? config.ALLOWED_URL_PREFIXES : null,
 				allowedMethods: config.ALLOW_NETWORK ? config.ALLOWED_METHODS : null,
+				maxResponseSize: config.MAX_RESPONSE_SIZE ?? null,
 				maxOutputLength: config.MAX_OUTPUT_LENGTH,
+				maxFileReadSize: config.MAX_FILE_READ_SIZE ?? null,
 				loggingEnabled: config.ENABLE_LOGGING,
 				tracingEnabled: config.ENABLE_TRACING,
+				pythonEnabled: config.ENABLE_PYTHON,
+				defenseInDepthEnabled: config.ENABLE_DEFENSE_IN_DEPTH,
 				commandFilter: config.ALLOWED_COMMANDS || null,
 				executionLimits: buildExecutionLimits(),
 				availableCommands,
 				networkCommands: config.ALLOW_NETWORK ? getNetworkCommandNames() : [],
+				pythonCommands: config.ENABLE_PYTHON ? getPythonCommandNames() : [],
 				commandCategories: COMMAND_CATEGORIES,
 				features: FEATURES,
 				environmentVariables: ENVIRONMENT_VARIABLES,
@@ -90,8 +109,7 @@ export function registerInfoTools(server: McpServer): void {
 	server.registerTool(
 		"bash_get_cwd",
 		{
-			description:
-				"Get the current working directory of the persistent bash environment.",
+			description: "Get the current working directory of the persistent bash environment.",
 			inputSchema: {},
 		},
 		async () => {
@@ -114,8 +132,7 @@ export function registerInfoTools(server: McpServer): void {
 	server.registerTool(
 		"bash_get_env",
 		{
-			description:
-				"Get all environment variables from the persistent bash environment.",
+			description: "Get all environment variables from the persistent bash environment.",
 			inputSchema: {},
 		},
 		async () => {
