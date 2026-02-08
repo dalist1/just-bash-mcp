@@ -1,6 +1,9 @@
 /**
  * Information and state tools
  * Tools for getting information about the bash environment
+ *
+ * Uses upstream command registry types (AllCommandName, CommandName) and
+ * SecurityViolationLogger for defense-in-depth violation reporting.
  */
 
 import { readFileSync } from "node:fs";
@@ -8,6 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
+	type AllCommandName,
 	type CommandName,
 	getCommandNames,
 	getNetworkCommandNames,
@@ -20,9 +24,10 @@ import {
 	ENVIRONMENT_VARIABLES,
 	FEATURES,
 	parseMountsConfig,
+	violationLogger,
 } from "../config/index.ts";
 import { createErrorResponse, createJsonResponse } from "../utils/index.ts";
-import { getPersistentBash } from "./bash-instance.ts";
+import { getDefenseInDepthBox, getPersistentBash } from "./bash-instance.ts";
 
 function getUpstreamVersion(): string {
 	try {
@@ -67,8 +72,29 @@ export function registerInfoTools(server: McpServer): void {
 			// Get actual available commands (respects ALLOWED_COMMANDS filter)
 			const allBuiltinCommands = getCommandNames();
 			const availableCommands = config.ALLOWED_COMMANDS
-				? allBuiltinCommands.filter((cmd) => config.ALLOWED_COMMANDS?.includes(cmd as CommandName))
+				? allBuiltinCommands.filter((cmd) =>
+						config.ALLOWED_COMMANDS?.includes(cmd as AllCommandName as CommandName),
+					)
 				: allBuiltinCommands;
+
+			// Build defense-in-depth status with violation stats
+			const didBox = getDefenseInDepthBox();
+			const defenseInDepthStatus = config.ENABLE_DEFENSE_IN_DEPTH
+				? {
+						enabled: true,
+						auditMode: config.DEFENSE_IN_DEPTH_AUDIT,
+						consoleLogging: config.DEFENSE_IN_DEPTH_LOG,
+						boxActive: didBox?.isActive() ?? false,
+						...(didBox && {
+							stats: didBox.getStats(),
+						}),
+						violations: {
+							total: violationLogger.getTotalCount(),
+							hasViolations: violationLogger.hasViolations(),
+							summary: violationLogger.getSummary(),
+						},
+					}
+				: { enabled: false };
 
 			const info = {
 				version: config.VERSION,
@@ -88,7 +114,7 @@ export function registerInfoTools(server: McpServer): void {
 				loggingEnabled: config.ENABLE_LOGGING,
 				tracingEnabled: config.ENABLE_TRACING,
 				pythonEnabled: config.ENABLE_PYTHON,
-				defenseInDepthEnabled: config.ENABLE_DEFENSE_IN_DEPTH,
+				defenseInDepth: defenseInDepthStatus,
 				commandFilter: config.ALLOWED_COMMANDS || null,
 				executionLimits: buildExecutionLimits(),
 				availableCommands,

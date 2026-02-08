@@ -1,12 +1,44 @@
 /**
  * Bash execution tools
  * Core tools for executing bash commands
+ *
+ * Uses upstream network error classes for rich error classification:
+ * - NetworkAccessDeniedError: URL not in allowlist
+ * - TooManyRedirectsError: Redirect limit exceeded
+ * - RedirectNotAllowedError: Redirect target not in allowlist
+ * - SecurityViolationError: Defense-in-depth violation detected
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+	NetworkAccessDeniedError,
+	RedirectNotAllowedError,
+	SecurityViolationError,
+	TooManyRedirectsError,
+} from "just-bash";
 import { z } from "zod/v4";
 import { createErrorResponse, formatExecResult } from "../utils/index.ts";
 import { createBashInstance, getPersistentBash, resetPersistentBash } from "./bash-instance.ts";
+
+/**
+ * Classify errors from just-bash into user-friendly messages.
+ * Uses upstream error classes for precise classification.
+ */
+function classifyError(error: unknown, prefix: string) {
+	if (error instanceof NetworkAccessDeniedError) {
+		return createErrorResponse(error, `${prefix} [Network Access Denied]`);
+	}
+	if (error instanceof TooManyRedirectsError) {
+		return createErrorResponse(error, `${prefix} [Too Many Redirects]`);
+	}
+	if (error instanceof RedirectNotAllowedError) {
+		return createErrorResponse(error, `${prefix} [Redirect Not Allowed]`);
+	}
+	if (error instanceof SecurityViolationError) {
+		return createErrorResponse(error, `${prefix} [Security Violation]`);
+	}
+	return createErrorResponse(error, prefix);
+}
 
 /**
  * Register bash execution tools with the MCP server
@@ -63,7 +95,7 @@ export function registerExecTools(server: McpServer): void {
 				const result = await bash.exec(command, { cwd, env, rawScript });
 				return formatExecResult(result);
 			} catch (error) {
-				return createErrorResponse(error, "Execution error");
+				return classifyError(error, "Execution error");
 			}
 		},
 	);
@@ -104,7 +136,7 @@ export function registerExecTools(server: McpServer): void {
 				const result = await bash.exec(command, { cwd, env, rawScript });
 				return formatExecResult(result);
 			} catch (error) {
-				return createErrorResponse(error, "Execution error");
+				return classifyError(error, "Execution error");
 			}
 		},
 	);

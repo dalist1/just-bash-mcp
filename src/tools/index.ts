@@ -13,10 +13,13 @@ import { registerSandboxTools } from "./sandbox-tools.ts";
 // Re-export bash instance utilities
 export {
 	createBashInstance,
+	defineCommand,
+	getDefenseInDepthBox,
 	getPersistentBash,
 	getPersistentSandbox,
 	resetPersistentBash,
 	resetPersistentSandbox,
+	violationLogger,
 } from "./bash-instance.ts";
 // Re-export individual registrations for fine-grained control
 export { registerExecTools } from "./exec-tools.ts";

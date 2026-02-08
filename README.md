@@ -7,15 +7,20 @@ An MCP (Model Context Protocol) server that provides a sandboxed bash environmen
 
 Execute bash commands in a secure, isolated environment with an in-memory virtual filesystem.
 
-Built on top of [`just-bash`](https://github.com/vercel-labs/just-bash) v2.5.2.
+Built on top of [`just-bash`](https://github.com/vercel-labs/just-bash) v2.9.6.
 
-## What's New in v2.1.0
+## What's New in v2.8.0
 
+- **Synced with upstream `just-bash` v2.9.6** - Latest security hardening, defense-in-depth, fuzzing, jq fixes, and large file support
+- **Defense-in-depth mode** - Opt-in monkey-patching of dangerous JS globals (`JUST_BASH_DEFENSE_IN_DEPTH=true`)
+- **Python support** - Python3 via Pyodide (`JUST_BASH_ENABLE_PYTHON=true`)
+- **Vercel Sandbox API** - Compatible `bash_sandbox_*` tools for isolated execution
+- **oxlint/oxfmt toolchain** - Replaced tsc/biome with faster oxlint and oxfmt
+- **Configurable limits** - Fine-grained control over glob ops, string length, array size, heredoc size, and more
 - **`rg` (ripgrep)** - Fast regex search with `--files`, `-d`, `--stats`, `-t markdown`
 - **`tar`** - Archive support with compression
 - **MountableFS** - Mount multiple filesystems at different paths
 - **ReadWriteFS** - Direct read-write access to real directories
-- **Multi-level glob patterns** - Improved `**/*.ts` style matching
 
 ## Features
 
@@ -120,6 +125,16 @@ Add to your MCP settings:
 | `JUST_BASH_MAX_CALL_DEPTH` | Maximum function recursion depth | `100` |
 | `JUST_BASH_MAX_COMMAND_COUNT` | Maximum total commands per execution | `10000` |
 | `JUST_BASH_MAX_LOOP_ITERATIONS` | Maximum iterations per loop | `10000` |
+| `JUST_BASH_ENABLE_PYTHON` | Enable Python3 via Pyodide (`true`/`false`) | `false` |
+| `JUST_BASH_DEFENSE_IN_DEPTH` | Enable defense-in-depth mode (`true`/`false`) | `false` |
+| `JUST_BASH_DEFENSE_IN_DEPTH_AUDIT` | Audit mode: log violations but don't block | `false` |
+| `JUST_BASH_DEFENSE_IN_DEPTH_LOG` | Log violations to console | `false` |
+| `JUST_BASH_OVERLAY_READ_ONLY` | OverlayFS read-only mode | `false` |
+| `JUST_BASH_MAX_RESPONSE_SIZE` | Max network response body size (bytes) | `10485760` |
+| `JUST_BASH_MAX_FILE_READ_SIZE` | Max file read size for OverlayFs/ReadWriteFs | `10485760` |
+| `JUST_BASH_ALLOWED_COMMANDS` | Comma-separated command allow-list | all |
+| `JUST_BASH_ENABLE_LOGGING` | Enable execution logging | `false` |
+| `JUST_BASH_ENABLE_TRACING` | Enable performance tracing | `false` |
 
 ## Tools
 
@@ -149,9 +164,28 @@ Reset the persistent bash environment, clearing all files and state.
 
 File operations in the persistent environment.
 
+### `bash_direct_read` / `bash_direct_write`
+
+Direct filesystem read/write operations (bypass shell execution).
+
 ### `bash_info`
 
-Get information about the bash environment configuration.
+Get information about the bash environment configuration, including defense-in-depth violation stats.
+
+### `bash_get_cwd` / `bash_get_env`
+
+Get current working directory or environment variables.
+
+### Vercel Sandbox API
+
+Compatible with the Vercel Sandbox API:
+
+- `bash_sandbox_run` - Run a command in the sandbox
+- `bash_sandbox_write_files` - Write multiple files at once
+- `bash_sandbox_read_file` - Read a file (supports base64 encoding)
+- `bash_sandbox_mkdir` - Create a directory
+- `bash_sandbox_stop` - Stop and clean up the sandbox
+- `bash_sandbox_reset` - Reset the sandbox state
 
 ## Supported Commands
 
@@ -235,6 +269,26 @@ Get information about the bash environment configuration.
 - Execution limits protect against infinite loops and recursion
 - No binary/WASM execution
 - Network disabled by default; when enabled, URL and method allow-lists enforced
+- **Defense-in-depth mode** (opt-in): Monkey-patches dangerous JS globals (`Function`, `eval`, `setTimeout`, `process`, etc.) during script execution to block escape vectors
+- **SecurityViolationLogger**: Tracks all defense-in-depth violations with full stats accessible via `bash_info`
+- **Rich network error classification**: `NetworkAccessDeniedError`, `TooManyRedirectsError`, `RedirectNotAllowedError` for precise error messages
+
+## Upstream API Coverage
+
+This wrapper integrates the full public API surface of `just-bash` v2.9.6:
+
+| Category | Exports Used |
+|----------|-------------|
+| Core | `Bash`, `BashOptions`, `ExecOptions`, `BashExecResult` |
+| Commands | `CommandName`, `AllCommandName`, `getCommandNames`, `getNetworkCommandNames`, `getPythonCommandNames` |
+| Custom Commands | `defineCommand`, `CustomCommand`, `LazyCommand` |
+| Filesystem | `InMemoryFs`, `OverlayFs`, `ReadWriteFs`, `MountableFs`, `IFileSystem` |
+| Network | `NetworkConfig`, `NetworkAccessDeniedError`, `TooManyRedirectsError`, `RedirectNotAllowedError` |
+| Sandbox | `Sandbox`, `SandboxCommand`, `SandboxOptions`, `OutputMessage` |
+| Security | `DefenseInDepthBox`, `SecurityViolationLogger`, `SecurityViolationError`, `createConsoleViolationCallback` |
+| Trace | `TraceCallback`, `TraceEvent` |
+
+All types are re-exported from `src/types.ts` for downstream consumers.
 
 ## License
 

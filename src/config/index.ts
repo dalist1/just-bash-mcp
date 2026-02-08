@@ -7,28 +7,25 @@ import {
 	type BashLogger,
 	type BashOptions,
 	type CommandName,
-	InMemoryFs,
-	MountableFs,
+	type DefenseInDepthConfig,
 	type MountConfig,
 	type NetworkConfig,
+	type TraceCallback,
+	type TraceEvent,
 	OverlayFs,
 	ReadWriteFs,
+	SecurityViolationLogger,
+	createConsoleViolationCallback,
 } from "just-bash";
+
+// Re-export upstream types used by other modules
+export type { DefenseInDepthConfig, TraceCallback, TraceEvent };
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export type HttpMethod = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "PATCH" | "OPTIONS";
-
-export interface TraceEvent {
-	category: string;
-	name: string;
-	durationMs: number;
-	details?: Record<string, unknown>;
-}
-
-export type TraceCallback = (event: TraceEvent) => void;
 
 // ============================================================================
 // Environment Variable Parsing
@@ -89,6 +86,8 @@ export interface Config {
 	readonly ENABLE_TRACING: boolean;
 	readonly ENABLE_PYTHON: boolean;
 	readonly ENABLE_DEFENSE_IN_DEPTH: boolean;
+	readonly DEFENSE_IN_DEPTH_AUDIT: boolean;
+	readonly DEFENSE_IN_DEPTH_LOG: boolean;
 	readonly OVERLAY_READ_ONLY: boolean;
 	readonly ALLOWED_COMMANDS: CommandName[] | undefined;
 }
@@ -157,6 +156,8 @@ export const config: Config = {
 	// Feature flags
 	ENABLE_PYTHON: parseEnvBoolean("JUST_BASH_ENABLE_PYTHON", false),
 	ENABLE_DEFENSE_IN_DEPTH: parseEnvBoolean("JUST_BASH_DEFENSE_IN_DEPTH", false),
+	DEFENSE_IN_DEPTH_AUDIT: parseEnvBoolean("JUST_BASH_DEFENSE_IN_DEPTH_AUDIT", false),
+	DEFENSE_IN_DEPTH_LOG: parseEnvBoolean("JUST_BASH_DEFENSE_IN_DEPTH_LOG", false),
 	OVERLAY_READ_ONLY: parseEnvBoolean("JUST_BASH_OVERLAY_READ_ONLY", false),
 
 	// Command filtering
@@ -198,6 +199,39 @@ export const traceCallback: TraceCallback | undefined = config.ENABLE_TRACING
 			}
 		}
 	: undefined;
+
+// ============================================================================
+// Defense-in-Depth Configuration
+// ============================================================================
+
+/**
+ * Shared SecurityViolationLogger instance for tracking violations across
+ * all Bash instances. Exposed so info-tools can report violation stats.
+ */
+export const violationLogger = new SecurityViolationLogger();
+
+/**
+ * Build the defense-in-depth configuration from environment variables.
+ * Returns `false` when disabled, or a full DefenseInDepthConfig object.
+ */
+export function buildDefenseInDepthConfig(): DefenseInDepthConfig | false {
+	if (!config.ENABLE_DEFENSE_IN_DEPTH) {
+		return false;
+	}
+
+	const consoleCallback = config.DEFENSE_IN_DEPTH_LOG
+		? createConsoleViolationCallback()
+		: undefined;
+
+	return {
+		enabled: true,
+		auditMode: config.DEFENSE_IN_DEPTH_AUDIT,
+		onViolation: (violation) => {
+			violationLogger.record(violation);
+			consoleCallback?.(violation);
+		},
+	};
+}
 
 // ============================================================================
 // Configuration Builders
@@ -315,6 +349,10 @@ export const ENVIRONMENT_VARIABLES = {
 	JUST_BASH_ENABLE_PYTHON: "Enable python3/python commands via Pyodide (default: false)",
 	JUST_BASH_DEFENSE_IN_DEPTH:
 		"Enable defense-in-depth mode that patches dangerous JS globals (default: false)",
+	JUST_BASH_DEFENSE_IN_DEPTH_AUDIT:
+		"Audit mode: log violations but don't block them (default: false, requires DEFENSE_IN_DEPTH=true)",
+	JUST_BASH_DEFENSE_IN_DEPTH_LOG:
+		"Log violations to console via createConsoleViolationCallback (default: false)",
 } as const;
 
 // ============================================================================
@@ -340,19 +378,25 @@ export const COMMAND_CATEGORIES = {
 // ============================================================================
 
 export const FEATURES = {
-	customCommands: "Define custom TypeScript commands using defineCommand()",
+	customCommands:
+		"Define custom TypeScript commands using defineCommand() from just-bash, supports lazy-loading via LazyCommand",
 	rawScript: "Preserve leading whitespace in scripts (useful for here-docs)",
 	logger: "Optional execution logging via BashLogger interface",
-	trace: "Performance profiling via TraceCallback",
+	trace: "Performance profiling via TraceCallback (upstream type)",
 	commandFilter: "Restrict available commands via JUST_BASH_ALLOWED_COMMANDS env var",
-	sandboxApi: "Vercel Sandbox compatible API via bash_sandbox_* tools",
+	sandboxApi:
+		"Vercel Sandbox compatible API via bash_sandbox_* tools (run, write, read, mkdir, stop, reset)",
 	python: "Python support via Pyodide (opt-in via JUST_BASH_ENABLE_PYTHON=true)",
 	defenseInDepth:
-		"Defense-in-depth mode that monkey-patches dangerous JS globals during execution (opt-in via JUST_BASH_DEFENSE_IN_DEPTH=true)",
+		"Defense-in-depth with SecurityViolationLogger, audit mode, and console logging (opt-in via JUST_BASH_DEFENSE_IN_DEPTH=true)",
 	overlayReadOnly:
 		"Read-only overlay filesystem mode (opt-in via JUST_BASH_OVERLAY_READ_ONLY=true)",
 	networkResponseSize:
 		"Configurable max network response body size via JUST_BASH_MAX_RESPONSE_SIZE",
 	fileReadSizeLimit:
 		"Configurable max file read size for OverlayFs/ReadWriteFs via JUST_BASH_MAX_FILE_READ_SIZE",
+	networkErrorHandling:
+		"Rich network error classification: NetworkAccessDeniedError, TooManyRedirectsError, RedirectNotAllowedError",
+	securityViolationTracking:
+		"SecurityViolationLogger tracks all defense-in-depth violations with stats via bash_info",
 } as const;

@@ -1,28 +1,74 @@
 /**
  * Bash instance management
  * Handles creation and lifecycle of Bash instances
+ *
+ * Uses all upstream just-bash APIs:
+ * - Bash, Sandbox, SandboxCommand for execution
+ * - DefenseInDepthBox with SecurityViolationLogger for security monitoring
+ * - defineCommand for custom command registration
+ * - All filesystem variants (InMemoryFs, MountableFs, OverlayFs, ReadWriteFs)
+ * - Network error classes for rich error reporting (handled in exec-tools/sandbox-tools)
  */
 
 import {
 	Bash,
 	type BashOptions,
 	type CustomCommand,
+	DefenseInDepthBox,
 	InMemoryFs,
 	MountableFs,
 	OverlayFs,
 	ReadWriteFs,
 	Sandbox,
 	type SandboxOptions,
+	defineCommand,
 } from "just-bash";
 
 import {
 	bashLogger,
+	buildDefenseInDepthConfig,
 	buildExecutionLimits,
 	buildNetworkConfig,
 	config,
 	parseMountsConfig,
 	traceCallback,
+	violationLogger,
 } from "../config/index.ts";
+
+// ============================================================================
+// Bash Instance Factory
+// ============================================================================
+
+// ============================================================================
+// Defense-in-Depth Box (singleton)
+// ============================================================================
+
+let defenseInDepthBox: DefenseInDepthBox | null = null;
+
+/**
+ * Get or create the shared DefenseInDepthBox instance.
+ * Returns null if defense-in-depth is disabled.
+ */
+export function getDefenseInDepthBox(): DefenseInDepthBox | null {
+	const didConfig = buildDefenseInDepthConfig();
+	if (!didConfig) return null;
+
+	if (!defenseInDepthBox) {
+		defenseInDepthBox = new DefenseInDepthBox(didConfig);
+	}
+	return defenseInDepthBox;
+}
+
+/**
+ * Get the shared SecurityViolationLogger for querying violation stats.
+ */
+export { violationLogger } from "../config/index.ts";
+
+/**
+ * Re-export defineCommand so downstream consumers can create custom commands
+ * using the upstream API without importing just-bash directly.
+ */
+export { defineCommand };
 
 // ============================================================================
 // Bash Instance Factory
@@ -38,6 +84,7 @@ export function createBashInstance(
 ): Bash {
 	const networkConfig = buildNetworkConfig();
 	const executionLimits = buildExecutionLimits();
+	const defenseInDepthConfig = buildDefenseInDepthConfig();
 
 	const baseOptions: BashOptions = {
 		network: networkConfig,
@@ -49,7 +96,7 @@ export function createBashInstance(
 		customCommands,
 		commands: config.ALLOWED_COMMANDS,
 		python: config.ENABLE_PYTHON,
-		defenseInDepth: config.ENABLE_DEFENSE_IN_DEPTH,
+		defenseInDepth: defenseInDepthConfig,
 	};
 
 	// Check for mountable filesystem configuration
@@ -134,7 +181,8 @@ export function resetPersistentBash(): void {
 let persistentSandbox: Sandbox | null = null;
 
 /**
- * Get or create the persistent Sandbox instance
+ * Get or create the persistent Sandbox instance.
+ * Passes all available configuration including network and filesystem options.
  */
 export async function getPersistentSandbox(): Promise<Sandbox> {
 	if (!persistentSandbox) {
@@ -153,8 +201,12 @@ export async function getPersistentSandbox(): Promise<Sandbox> {
 }
 
 /**
- * Reset the persistent Sandbox instance
+ * Reset the persistent Sandbox instance.
+ * Calls Sandbox.stop() to clean up resources before releasing.
  */
-export function resetPersistentSandbox(): void {
+export async function resetPersistentSandbox(): Promise<void> {
+	if (persistentSandbox) {
+		await persistentSandbox.stop();
+	}
 	persistentSandbox = null;
 }
