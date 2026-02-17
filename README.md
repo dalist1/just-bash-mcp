@@ -7,11 +7,11 @@ An MCP (Model Context Protocol) server that provides a sandboxed bash environmen
 
 Execute bash commands in a secure, isolated environment with an in-memory virtual filesystem.
 
-Built on top of [`just-bash`](https://github.com/vercel-labs/just-bash) v2.9.6.
+Built on top of [`just-bash`](https://github.com/vercel-labs/just-bash) v2.10.2.
 
-## What's New in v2.8.0
+## What's New in v2.9.0
 
-- **Synced with upstream `just-bash` v2.9.6** - Latest security hardening, defense-in-depth, fuzzing, jq fixes, and large file support
+- **Synced with upstream `just-bash` v2.10.2** - Latest upstream commands, APIs, and type exports
 - **Defense-in-depth mode** - Opt-in monkey-patching of dangerous JS globals (`JUST_BASH_DEFENSE_IN_DEPTH=true`)
 - **Python support** - Python3 via Pyodide (`JUST_BASH_ENABLE_PYTHON=true`)
 - **Vercel Sandbox API** - Compatible `bash_sandbox_*` tools for isolated execution
@@ -275,7 +275,7 @@ Compatible with the Vercel Sandbox API:
 
 ## Upstream API Coverage
 
-This wrapper integrates the full public API surface of `just-bash` v2.9.6:
+This wrapper integrates the full public API surface of `just-bash` v2.10.2:
 
 | Category | Exports Used |
 |----------|-------------|

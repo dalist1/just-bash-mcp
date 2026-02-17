@@ -6,9 +6,6 @@
  * SecurityViolationLogger for defense-in-depth violation reporting.
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
 	type AllCommandName,
@@ -24,26 +21,11 @@ import {
 	ENVIRONMENT_VARIABLES,
 	FEATURES,
 	parseMountsConfig,
+	UPSTREAM_JUST_BASH_VERSION,
 	violationLogger,
 } from "../config/index.ts";
 import { createErrorResponse, createJsonResponse } from "../utils/index.ts";
 import { getDefenseInDepthBox, getPersistentBash } from "./bash-instance.ts";
-
-function getUpstreamVersion(): string {
-	try {
-		// Resolve the just-bash package directory relative to this module
-		const __dirname = dirname(fileURLToPath(import.meta.url));
-		const pkgPath = join(__dirname, "..", "..", "node_modules", "just-bash", "package.json");
-		const pkg: { version: string } = JSON.parse(readFileSync(pkgPath, "utf-8")) as {
-			version: string;
-		};
-		return pkg.version;
-	} catch {
-		return "unknown";
-	}
-}
-
-const UPSTREAM_VERSION = getUpstreamVersion();
 
 /**
  * Register information tools with the MCP server
@@ -98,7 +80,7 @@ export function registerInfoTools(server: McpServer): void {
 
 			const info = {
 				version: config.VERSION,
-				upstreamVersion: UPSTREAM_VERSION,
+				upstreamVersion: UPSTREAM_JUST_BASH_VERSION,
 				fsMode,
 				fsRoot: config.READ_WRITE_ROOT || config.OVERLAY_ROOT || null,
 				overlayReadOnly: config.OVERLAY_ROOT ? config.OVERLAY_READ_ONLY : null,

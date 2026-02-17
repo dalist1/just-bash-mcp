@@ -3,6 +3,9 @@
  * Handles environment variable parsing and configuration building
  */
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
 	type BashLogger,
 	type BashOptions,
@@ -10,8 +13,6 @@ import {
 	type DefenseInDepthConfig,
 	type MountConfig,
 	type NetworkConfig,
-	type TraceCallback,
-	type TraceEvent,
 	OverlayFs,
 	ReadWriteFs,
 	SecurityViolationLogger,
@@ -19,7 +20,16 @@ import {
 } from "just-bash";
 
 // Re-export upstream types used by other modules
-export type { DefenseInDepthConfig, TraceCallback, TraceEvent };
+export type { DefenseInDepthConfig };
+
+export interface TraceEvent {
+	category: string;
+	name: string;
+	durationMs: number;
+	details?: Record<string, unknown>;
+}
+
+export type TraceCallback = (event: TraceEvent) => void;
 
 // ============================================================================
 // Types
@@ -92,6 +102,22 @@ export interface Config {
 	readonly ALLOWED_COMMANDS: CommandName[] | undefined;
 }
 
+function readPackageVersion(relativePath: string): string {
+	try {
+		const __dirname = dirname(fileURLToPath(import.meta.url));
+		const packagePath = join(__dirname, relativePath);
+		const packageJson = JSON.parse(readFileSync(packagePath, "utf-8")) as { version?: string };
+		return packageJson.version || "unknown";
+	} catch {
+		return "unknown";
+	}
+}
+
+export const WRAPPER_VERSION = readPackageVersion("../../package.json");
+export const UPSTREAM_JUST_BASH_VERSION = readPackageVersion(
+	"../../node_modules/just-bash/package.json",
+);
+
 function getAllowedMethods(): HttpMethod[] {
 	const methods = parseEnvStringArray("JUST_BASH_ALLOWED_METHODS");
 	return methods.length > 0 ? (methods as HttpMethod[]) : ["GET", "HEAD"];
@@ -111,7 +137,7 @@ function parseEnvOptionalInt(key: string): number | undefined {
 
 export const config: Config = {
 	// Server info
-	VERSION: "2.8.0",
+	VERSION: WRAPPER_VERSION,
 	SERVER_NAME: "just-bash-mcp",
 
 	// Filesystem configuration
@@ -187,7 +213,7 @@ export const bashLogger: BashLogger | undefined = config.ENABLE_LOGGING
 		}
 	: undefined;
 
-export const traceCallback: TraceCallback | undefined = config.ENABLE_TRACING
+export const traceCallback: BashOptions["trace"] = config.ENABLE_TRACING
 	? (event: TraceEvent) => {
 			if (event.details) {
 				console.error(
@@ -226,7 +252,7 @@ export function buildDefenseInDepthConfig(): DefenseInDepthConfig | false {
 	return {
 		enabled: true,
 		auditMode: config.DEFENSE_IN_DEPTH_AUDIT,
-		onViolation: (violation) => {
+		onViolation: (violation: { type: string; target: string; details: string }) => {
 			violationLogger.record(violation);
 			consoleCallback?.(violation);
 		},
