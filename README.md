@@ -9,18 +9,16 @@ Execute bash commands in a secure, isolated environment with an in-memory virtua
 
 Built on top of [`just-bash`](https://github.com/vercel-labs/just-bash) v2.10.2.
 
-## What's New in v2.9.0
+## What's New in v2.9.2
 
-- **Synced with upstream `just-bash` v2.10.2** - Latest upstream commands, APIs, and type exports
+- **Expanded Vercel Sandbox API coverage** - `bash_sandbox_run` now supports optional `includeOutput` and `includeLogs`
+- **Sandbox domain support** - New `bash_sandbox_domain` tool returns the current sandbox domain/identifier
+- **Synced with upstream `just-bash` v2.10.2** - Full upstream commands, APIs, and type exports
 - **Defense-in-depth mode** - Opt-in monkey-patching of dangerous JS globals (`JUST_BASH_DEFENSE_IN_DEPTH=true`)
 - **Python support** - Python3 via Pyodide (`JUST_BASH_ENABLE_PYTHON=true`)
-- **Vercel Sandbox API** - Compatible `bash_sandbox_*` tools for isolated execution
-- **oxlint/oxfmt toolchain** - Replaced tsc/biome with faster oxlint and oxfmt
-- **Configurable limits** - Fine-grained control over glob ops, string length, array size, heredoc size, and more
-- **`rg` (ripgrep)** - Fast regex search with `--files`, `-d`, `--stats`, `-t markdown`
-- **`tar`** - Archive support with compression
-- **MountableFS** - Mount multiple filesystems at different paths
-- **ReadWriteFS** - Direct read-write access to real directories
+- **Vercel Sandbox API tools** - Compatible `bash_sandbox_*` tools for isolated execution
+- **MountableFS + ReadWriteFS** - Real directory mounts with overlay/read-write options
+- **Configurable execution limits** - Fine-grained control over loops, strings, arrays, heredocs, and substitutions
 
 ## Features
 
