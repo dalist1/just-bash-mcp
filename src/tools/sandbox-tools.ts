@@ -15,6 +15,7 @@ import {
 	RedirectNotAllowedError,
 	SecurityViolationError,
 	TooManyRedirectsError,
+	type OutputMessage,
 } from "just-bash";
 import { z } from "zod/v4";
 import { config } from "../config/index.ts";
@@ -61,16 +62,28 @@ export function registerSandboxTools(server: McpServer): void {
 				command: z.string().describe("The command to execute"),
 				cwd: z.string().optional().describe("Working directory for the command"),
 				env: z.record(z.string(), z.string()).optional().describe("Environment variables to set"),
+				includeOutput: z
+					.boolean()
+					.optional()
+					.describe("Include structured output messages from SandboxCommand.output()"),
+				includeLogs: z
+					.boolean()
+					.optional()
+					.describe("Include execution logs from SandboxCommand.logs()"),
 			},
 		},
 		async ({
 			command,
 			cwd,
 			env,
+			includeOutput = false,
+			includeLogs = false,
 		}: {
 			command: string;
 			cwd?: string;
 			env?: Record<string, string>;
+			includeOutput?: boolean;
+			includeLogs?: boolean;
 		}) => {
 			try {
 				const sandbox = await getPersistentSandbox();
@@ -79,16 +92,51 @@ export function registerSandboxTools(server: McpServer): void {
 				const stdout = await cmd.stdout();
 				const stderr = await cmd.stderr();
 
-				return createJsonResponse(
-					{
-						stdout: truncateOutput(stdout, config.MAX_OUTPUT_LENGTH, "stdout"),
-						stderr: truncateOutput(stderr, config.MAX_OUTPUT_LENGTH, "stderr"),
-						exitCode: result.exitCode,
-					},
-					result.exitCode !== 0,
-				);
+				const response: {
+					stdout: string;
+					stderr: string;
+					exitCode: number;
+					output?: string;
+					logs?: OutputMessage[];
+				} = {
+					stdout: truncateOutput(stdout, config.MAX_OUTPUT_LENGTH, "stdout"),
+					stderr: truncateOutput(stderr, config.MAX_OUTPUT_LENGTH, "stderr"),
+					exitCode: result.exitCode,
+				};
+
+				if (includeOutput) {
+					response.output = truncateOutput(await cmd.output(), config.MAX_OUTPUT_LENGTH, "stdout");
+				}
+				if (includeLogs) {
+					const logs: OutputMessage[] = [];
+					for await (const message of cmd.logs()) {
+						logs.push(message);
+					}
+					response.logs = logs;
+				}
+
+				return createJsonResponse(response, result.exitCode !== 0);
 			} catch (error) {
 				return classifyError(error, "Sandbox error");
+			}
+		},
+	);
+
+	// ========================================================================
+	// bash_sandbox_domain - Get sandbox domain
+	// ========================================================================
+	server.registerTool(
+		"bash_sandbox_domain",
+		{
+			description: "Get the current sandbox domain/identifier.",
+			inputSchema: {},
+		},
+		async () => {
+			try {
+				const sandbox = await getPersistentSandbox();
+				return createJsonResponse({ domain: sandbox.domain });
+			} catch (error) {
+				return classifyError(error, "Domain error");
 			}
 		},
 	);

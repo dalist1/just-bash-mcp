@@ -180,7 +180,8 @@ Get current working directory or environment variables.
 
 Compatible with the Vercel Sandbox API:
 
-- `bash_sandbox_run` - Run a command in the sandbox
+- `bash_sandbox_run` - Run a command in the sandbox (optionally include structured output/logs)
+- `bash_sandbox_domain` - Get the sandbox domain/identifier
 - `bash_sandbox_write_files` - Write multiple files at once
 - `bash_sandbox_read_file` - Read a file (supports base64 encoding)
 - `bash_sandbox_mkdir` - Create a directory
