@@ -9,7 +9,7 @@ Execute bash commands in a secure, isolated environment with an in-memory virtua
 
 Built on top of [`just-bash`](https://github.com/vercel-labs/just-bash) v2.12.5.
 
-## What's New in v2.9.4
+## What's New in v2.9.5
 
 - **Synced with upstream `just-bash` v2.12.5** - Full upstream commands, APIs, and type exports
 - **Persistent sandbox tools** - `bash_sandbox_*` tools remain available for higher-level isolated workflows
@@ -27,6 +27,22 @@ Built on top of [`just-bash`](https://github.com/vercel-labs/just-bash) v2.12.5.
 - **OverlayFS Support**: Mount real directories as read-only with copy-on-write
 - **MountableFS Support**: Mount multiple filesystems at different paths
 - **ReadWriteFS Support**: Direct read-write access to real directories
+
+## Synced Upstream Features
+
+The current wrapper release tracks `just-bash` `v2.12.5`, which brings in the post-`v2.10.2` upstream feature set, including:
+
+- Defense-in-depth hardening across the runtime and filesystem layers
+- Defense-in-depth enabled by default upstream, plus additional hardening passes
+- Filesystem hardening for overlays, external filesystems, symlinks, and broken symlink handling
+- Virtualized PID and shell security invariant improvements
+- Updated `Sandbox.runCommand()` signature compatibility
+- Python runtime migration from Pyodide to emscripten CPython
+- Follow-up Python runtime hardening and cleanup
+- UTF-8 handling and write-path fixes
+- CommonJS compatibility improvements upstream
+- `ls -F` / `--classify` support
+- Additional cleanup and internal hardening work shipped through `v2.12.5`
 
 ## Installation
 
