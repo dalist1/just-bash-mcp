@@ -372,7 +372,8 @@ export const ENVIRONMENT_VARIABLES = {
 		"Max file read size in bytes for OverlayFs/ReadWriteFs (default: 10MB)",
 	JUST_BASH_ENABLE_LOGGING: "Enable debug logging (default: false)",
 	JUST_BASH_ENABLE_TRACING: "Enable performance tracing (default: false)",
-	JUST_BASH_ENABLE_PYTHON: "Enable python3/python commands via Pyodide (default: false)",
+	JUST_BASH_ENABLE_PYTHON:
+		"Enable python3/python commands via the upstream emscripten CPython runtime (default: false)",
 	JUST_BASH_DEFENSE_IN_DEPTH:
 		"Enable defense-in-depth mode that patches dangerous JS globals (default: false)",
 	JUST_BASH_DEFENSE_IN_DEPTH_AUDIT:
@@ -390,7 +391,7 @@ export const COMMAND_CATEGORIES = {
 	textProcessing:
 		"awk, base64, column, comm, cut, diff, expand, fold, grep (egrep, fgrep), head, join, md5sum, nl, od, paste, printf, rev, rg (ripgrep), sed, sha1sum, sha256sum, sort, strings, tac, tail, tr, unexpand, uniq, wc, xargs",
 	dataProcessing:
-		"jq (JSON), python3/python (Python via Pyodide), sqlite3 (SQLite), xan (CSV), yq (YAML/XML/TOML/CSV)",
+		"jq (JSON), python3/python (Python via emscripten CPython), sqlite3 (SQLite), xan (CSV), yq (YAML/XML/TOML/CSV)",
 	compression: "gzip (gunzip, zcat), tar",
 	navigation:
 		"basename, cd, dirname, du, echo, env, export, find, hostname, printenv, pwd, tee, whoami",
@@ -411,8 +412,9 @@ export const FEATURES = {
 	trace: "Performance profiling via TraceCallback (upstream type)",
 	commandFilter: "Restrict available commands via JUST_BASH_ALLOWED_COMMANDS env var",
 	sandboxApi:
-		"Vercel Sandbox compatible API via bash_sandbox_* tools (run, write, read, mkdir, stop, reset)",
-	python: "Python support via Pyodide (opt-in via JUST_BASH_ENABLE_PYTHON=true)",
+		"Additional persistent sandbox tools via bash_sandbox_* (run, write, read, mkdir, stop, reset)",
+	python:
+		"Python support via the upstream emscripten CPython runtime (opt-in via JUST_BASH_ENABLE_PYTHON=true)",
 	defenseInDepth:
 		"Defense-in-depth with SecurityViolationLogger, audit mode, and console logging (opt-in via JUST_BASH_DEFENSE_IN_DEPTH=true)",
 	overlayReadOnly:

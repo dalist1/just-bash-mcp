@@ -4,7 +4,7 @@
  * just-bash-mcp - MCP Server for sandboxed bash execution
  *
  * A Model Context Protocol (MCP) server that provides AI agents with a
- * secure, sandboxed bash environment powered by just-bash from Vercel Labs.
+ * secure, sandboxed bash environment powered by just-bash.
  *
  * @see https://github.com/vercel-labs/just-bash
  * @see https://modelcontextprotocol.io

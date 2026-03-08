@@ -37,7 +37,7 @@ export function registerAllTools(server: McpServer): void {
 	// File operation tools
 	registerFileTools(server);
 
-	// Vercel Sandbox compatible tools
+	// Additional persistent sandbox tools
 	registerSandboxTools(server);
 
 	// Information and state tools

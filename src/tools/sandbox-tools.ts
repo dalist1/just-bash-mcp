@@ -1,6 +1,6 @@
 /**
  * Sandbox API tools
- * Vercel Sandbox compatible tools for execution in an isolated environment
+ * Tools for execution in a persistent isolated environment
  *
  * Uses upstream Sandbox/SandboxCommand APIs:
  * - Sandbox.create(), runCommand(), writeFiles(), readFile(), mkDir(), stop()
@@ -27,9 +27,6 @@ import {
 } from "../utils/index.ts";
 import { getPersistentSandbox, resetPersistentSandbox } from "./bash-instance.ts";
 
-/**
- * Classify errors from just-bash into user-friendly messages.
- */
 function classifyError(error: unknown, prefix: string) {
 	if (error instanceof NetworkAccessDeniedError) {
 		return createErrorResponse(error, `${prefix} [Network Access Denied]`);
@@ -46,18 +43,12 @@ function classifyError(error: unknown, prefix: string) {
 	return createErrorResponse(error, prefix);
 }
 
-/**
- * Register Vercel Sandbox compatible tools with the MCP server
- */
 export function registerSandboxTools(server: McpServer): void {
-	// ========================================================================
-	// bash_sandbox_run - Run command in sandbox
-	// ========================================================================
 	server.registerTool(
 		"bash_sandbox_run",
 		{
 			description:
-				"Run a command in a Vercel Sandbox compatible environment. The sandbox persists across calls.",
+				"Run a command in a persistent isolated environment with optional structured output and logs.",
 			inputSchema: {
 				command: z.string().describe("The command to execute"),
 				cwd: z.string().optional().describe("Working directory for the command"),
@@ -122,13 +113,10 @@ export function registerSandboxTools(server: McpServer): void {
 		},
 	);
 
-	// ========================================================================
-	// bash_sandbox_domain - Get sandbox domain
-	// ========================================================================
 	server.registerTool(
 		"bash_sandbox_domain",
 		{
-			description: "Get the current sandbox domain/identifier.",
+			description: "Get the current sandbox domain or identifier.",
 			inputSchema: {},
 		},
 		async () => {
@@ -141,13 +129,10 @@ export function registerSandboxTools(server: McpServer): void {
 		},
 	);
 
-	// ========================================================================
-	// bash_sandbox_write_files - Write multiple files
-	// ========================================================================
 	server.registerTool(
 		"bash_sandbox_write_files",
 		{
-			description: "Write multiple files to the sandbox environment at once.",
+			description: "Write multiple files to the persistent isolated environment at once.",
 			inputSchema: {
 				files: z.record(z.string(), z.string()).describe("Files to write (path -> content)"),
 			},
@@ -166,13 +151,10 @@ export function registerSandboxTools(server: McpServer): void {
 		},
 	);
 
-	// ========================================================================
-	// bash_sandbox_read_file - Read file from sandbox
-	// ========================================================================
 	server.registerTool(
 		"bash_sandbox_read_file",
 		{
-			description: "Read a file from the sandbox environment.",
+			description: "Read a file from the persistent isolated environment.",
 			inputSchema: {
 				path: z.string().describe("The file path to read"),
 				encoding: z.enum(["utf-8", "base64"]).optional().describe("File encoding (default: utf-8)"),
@@ -197,13 +179,10 @@ export function registerSandboxTools(server: McpServer): void {
 		},
 	);
 
-	// ========================================================================
-	// bash_sandbox_mkdir - Create directory in sandbox
-	// ========================================================================
 	server.registerTool(
 		"bash_sandbox_mkdir",
 		{
-			description: "Create a directory in the sandbox environment.",
+			description: "Create a directory in the persistent isolated environment.",
 			inputSchema: {
 				path: z.string().describe("The directory path to create"),
 				recursive: z
@@ -224,14 +203,11 @@ export function registerSandboxTools(server: McpServer): void {
 		},
 	);
 
-	// ========================================================================
-	// bash_sandbox_stop - Stop and clean up sandbox
-	// ========================================================================
 	server.registerTool(
 		"bash_sandbox_stop",
 		{
 			description:
-				"Stop and clean up the sandbox environment, releasing all resources. Use bash_sandbox_reset to just clear state.",
+				"Stop and clean up the persistent isolated environment, releasing all resources. Use bash_sandbox_reset to just clear state.",
 			inputSchema: {},
 		},
 		async () => {
@@ -244,13 +220,10 @@ export function registerSandboxTools(server: McpServer): void {
 		},
 	);
 
-	// ========================================================================
-	// bash_sandbox_reset - Reset sandbox
-	// ========================================================================
 	server.registerTool(
 		"bash_sandbox_reset",
 		{
-			description: "Reset the sandbox environment, clearing all files and state.",
+			description: "Reset the persistent isolated environment, clearing all files and state.",
 			inputSchema: {},
 		},
 		async () => {

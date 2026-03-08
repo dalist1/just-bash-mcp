@@ -3,7 +3,7 @@
  * Handles creation and lifecycle of Bash instances
  *
  * Uses all upstream just-bash APIs:
- * - Bash, Sandbox, SandboxCommand for execution
+ * - Bash and Sandbox for execution
  * - DefenseInDepthBox with SecurityViolationLogger for security monitoring
  * - defineCommand for custom command registration
  * - All filesystem variants (InMemoryFs, MountableFs, OverlayFs, ReadWriteFs)

@@ -7,16 +7,14 @@ An MCP (Model Context Protocol) server that provides a sandboxed bash environmen
 
 Execute bash commands in a secure, isolated environment with an in-memory virtual filesystem.
 
-Built on top of [`just-bash`](https://github.com/vercel-labs/just-bash) v2.10.2.
+Built on top of [`just-bash`](https://github.com/vercel-labs/just-bash) v2.12.5.
 
-## What's New in v2.9.2
+## What's New in v2.9.4
 
-- **Expanded Vercel Sandbox API coverage** - `bash_sandbox_run` now supports optional `includeOutput` and `includeLogs`
-- **Sandbox domain support** - New `bash_sandbox_domain` tool returns the current sandbox domain/identifier
-- **Synced with upstream `just-bash` v2.10.2** - Full upstream commands, APIs, and type exports
+- **Synced with upstream `just-bash` v2.12.5** - Full upstream commands, APIs, and type exports
+- **Persistent sandbox tools** - `bash_sandbox_*` tools remain available for higher-level isolated workflows
 - **Defense-in-depth mode** - Opt-in monkey-patching of dangerous JS globals (`JUST_BASH_DEFENSE_IN_DEPTH=true`)
-- **Python support** - Python3 via Pyodide (`JUST_BASH_ENABLE_PYTHON=true`)
-- **Vercel Sandbox API tools** - Compatible `bash_sandbox_*` tools for isolated execution
+- **Python support** - Python3 via the upstream emscripten CPython runtime (`JUST_BASH_ENABLE_PYTHON=true`)
 - **MountableFS + ReadWriteFS** - Real directory mounts with overlay/read-write options
 - **Configurable execution limits** - Fine-grained control over loops, strings, arrays, heredocs, and substitutions
 
@@ -123,7 +121,7 @@ Add to your MCP settings:
 | `JUST_BASH_MAX_CALL_DEPTH` | Maximum function recursion depth | `100` |
 | `JUST_BASH_MAX_COMMAND_COUNT` | Maximum total commands per execution | `10000` |
 | `JUST_BASH_MAX_LOOP_ITERATIONS` | Maximum iterations per loop | `10000` |
-| `JUST_BASH_ENABLE_PYTHON` | Enable Python3 via Pyodide (`true`/`false`) | `false` |
+| `JUST_BASH_ENABLE_PYTHON` | Enable Python3 via emscripten CPython (`true`/`false`) | `false` |
 | `JUST_BASH_DEFENSE_IN_DEPTH` | Enable defense-in-depth mode (`true`/`false`) | `false` |
 | `JUST_BASH_DEFENSE_IN_DEPTH_AUDIT` | Audit mode: log violations but don't block | `false` |
 | `JUST_BASH_DEFENSE_IN_DEPTH_LOG` | Log violations to console | `false` |
@@ -174,16 +172,16 @@ Get information about the bash environment configuration, including defense-in-d
 
 Get current working directory or environment variables.
 
-### Vercel Sandbox API
+### `bash_sandbox_*`
 
-Compatible with the Vercel Sandbox API:
+Persistent isolated-environment helpers:
 
-- `bash_sandbox_run` - Run a command in the sandbox (optionally include structured output/logs)
-- `bash_sandbox_domain` - Get the sandbox domain/identifier
+- `bash_sandbox_run` - Run a command with optional structured output/logs
+- `bash_sandbox_domain` - Get the current sandbox domain/identifier
 - `bash_sandbox_write_files` - Write multiple files at once
 - `bash_sandbox_read_file` - Read a file (supports base64 encoding)
 - `bash_sandbox_mkdir` - Create a directory
-- `bash_sandbox_stop` - Stop and clean up the sandbox
+- `bash_sandbox_stop` - Stop and clean up the sandbox state
 - `bash_sandbox_reset` - Reset the sandbox state
 
 ## Supported Commands
@@ -274,7 +272,7 @@ Compatible with the Vercel Sandbox API:
 
 ## Upstream API Coverage
 
-This wrapper integrates the full public API surface of `just-bash` v2.10.2:
+This wrapper integrates the full public API surface of `just-bash` v2.12.5:
 
 | Category | Exports Used |
 |----------|-------------|
