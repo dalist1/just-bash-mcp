@@ -1,7 +1,18 @@
 {
-  "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "useTabs": true,
-  "tabWidth": 2,
-  "singleQuote": false,
-  "ignorePatterns": ["node_modules", "build", "dist"]
+ "$schema": "./node_modules/oxfmt/configuration_schema.json",
+ "useTabs": false,
+ "tabWidth": 1,
+ "printWidth": 320,
+ "singleQuote": true,
+ "jsxSingleQuote": false,
+ "quoteProps": "as-needed",
+ "trailingComma": "none",
+ "semi": false,
+ "arrowParens": "avoid",
+ "bracketSameLine": true,
+ "bracketSpacing": false,
+ "objectWrap": "collapse",
+ "endOfLine": "lf",
+ "experimentalSortImports": {"newlinesBetween": false, "internalPattern": ["@/", "~/"]},
+ "ignorePatterns": ["node_modules", ".next", ".vercel", ".turbo", "**/dist", "dist", "build", "coverage", "*.min.js", "public"]
 }

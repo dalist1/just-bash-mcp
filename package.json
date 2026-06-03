@@ -1,6 +1,6 @@
 {
 	"name": "just-bash-mcp",
-	"version": "2.9.5",
+	"version": "3.0.0",
 	"description": "MCP server providing a sandboxed bash environment using just-bash",
 	"type": "module",
 	"main": "./src/index.ts",
@@ -21,6 +21,7 @@
 	"scripts": {
 		"start": "node src/index.ts",
 		"dev": "node --watch src/index.ts",
+		"bench:stdio": "bash ./bench/hyperfine-stdin-vs-bash.sh",
 		"lint": "oxlint --type-aware",
 		"lint:fix": "oxlint --type-aware --fix",
 		"typecheck": "oxlint --type-aware --type-check",
@@ -60,7 +61,7 @@
 	"packageManager": "bun@1.3.8",
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.27.0",
-		"just-bash": "^2.12.5",
+		"just-bash": "^3.0.1",
 		"zod": "^4.3.6"
 	},
 	"devDependencies": {

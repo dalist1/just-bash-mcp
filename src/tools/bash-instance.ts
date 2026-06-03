@@ -10,30 +10,8 @@
  * - Network error classes for rich error reporting (handled in exec-tools/sandbox-tools)
  */
 
-import {
-	Bash,
-	type BashOptions,
-	type CustomCommand,
-	DefenseInDepthBox,
-	InMemoryFs,
-	MountableFs,
-	OverlayFs,
-	ReadWriteFs,
-	Sandbox,
-	type SandboxOptions,
-	defineCommand,
-} from "just-bash";
-
-import {
-	bashLogger,
-	buildDefenseInDepthConfig,
-	buildExecutionLimits,
-	buildNetworkConfig,
-	config,
-	parseMountsConfig,
-	traceCallback,
-	violationLogger,
-} from "../config/index.ts";
+import {Bash, type BashOptions, type CustomCommand, DefenseInDepthBox as UpstreamDefenseInDepthBox, InMemoryFs, MountableFs, OverlayFs, ReadWriteFs, Sandbox, type SandboxOptions, defineCommand} from 'just-bash'
+import {bashLogger, buildDefenseInDepthConfig, buildExecutionLimits, buildJavaScriptConfig, buildNetworkConfig, config, type DefenseInDepthConfig, type DefenseInDepthStats, parseMountsConfig, traceCallback, violationLogger} from '../config/index.ts'
 
 // ============================================================================
 // Bash Instance Factory
@@ -43,32 +21,39 @@ import {
 // Defense-in-Depth Box (singleton)
 // ============================================================================
 
-let defenseInDepthBox: DefenseInDepthBox | null = null;
+interface DefenseInDepthBoxInstance {
+ isActive(): boolean
+ getStats(): DefenseInDepthStats
+}
+
+const DefenseInDepthBox = UpstreamDefenseInDepthBox as unknown as {getInstance(config?: DefenseInDepthConfig | boolean): DefenseInDepthBoxInstance}
+
+let defenseInDepthBox: DefenseInDepthBoxInstance | null = null
 
 /**
  * Get or create the shared DefenseInDepthBox instance.
  * Returns null if defense-in-depth is disabled.
  */
-export function getDefenseInDepthBox(): DefenseInDepthBox | null {
-	const didConfig = buildDefenseInDepthConfig();
-	if (!didConfig) return null;
+export function getDefenseInDepthBox(): DefenseInDepthBoxInstance | null {
+ const didConfig = buildDefenseInDepthConfig()
+ if (!didConfig) return null
 
-	if (!defenseInDepthBox) {
-		defenseInDepthBox = new DefenseInDepthBox(didConfig);
-	}
-	return defenseInDepthBox;
+ if (!defenseInDepthBox) {
+  defenseInDepthBox = DefenseInDepthBox.getInstance(didConfig)
+ }
+ return defenseInDepthBox
 }
 
 /**
  * Get the shared SecurityViolationLogger for querying violation stats.
  */
-export { violationLogger } from "../config/index.ts";
+export {violationLogger} from '../config/index.ts'
 
 /**
  * Re-export defineCommand so downstream consumers can create custom commands
  * using the upstream API without importing just-bash directly.
  */
-export { defineCommand };
+export {defineCommand}
 
 // ============================================================================
 // Bash Instance Factory
@@ -77,127 +62,77 @@ export { defineCommand };
 /**
  * Create a new Bash instance with the given configuration
  */
-export function createBashInstance(
-	files?: Record<string, string>,
-	customCommands?: CustomCommand[],
-	env?: Record<string, string>,
-): Bash {
-	const networkConfig = buildNetworkConfig();
-	const executionLimits = buildExecutionLimits();
-	const defenseInDepthConfig = buildDefenseInDepthConfig();
+export function createBashInstance(files?: Record<string, string>, customCommands?: CustomCommand[], env?: Record<string, string>): Bash {
+ const networkConfig = buildNetworkConfig()
+ const executionLimits = buildExecutionLimits()
+ const defenseInDepthConfig = buildDefenseInDepthConfig()
+ const javascriptConfig = buildJavaScriptConfig()
 
-	const baseOptions: BashOptions = {
-		network: networkConfig,
-		executionLimits,
-		files,
-		env,
-		logger: bashLogger,
-		trace: traceCallback,
-		customCommands,
-		commands: config.ALLOWED_COMMANDS,
-		python: config.ENABLE_PYTHON,
-		defenseInDepth: defenseInDepthConfig,
-	};
+ const baseOptions: BashOptions = {network: networkConfig, executionLimits, files, env, logger: bashLogger, trace: traceCallback, customCommands, commands: config.ALLOWED_COMMANDS, python: config.ENABLE_PYTHON, javascript: javascriptConfig, defenseInDepth: defenseInDepthConfig}
 
-	// Check for mountable filesystem configuration
-	const mounts = parseMountsConfig();
-	if (mounts.length > 0) {
-		const mountableFs = new MountableFs({
-			base: new InMemoryFs(),
-			mounts,
-		});
-		return new Bash({
-			...baseOptions,
-			fs: mountableFs,
-			cwd: config.INITIAL_CWD,
-		});
-	}
+ // Check for mountable filesystem configuration
+ const mounts = parseMountsConfig()
+ if (mounts.length > 0) {
+  const mountableFs = new MountableFs({base: new InMemoryFs(), mounts})
+  return new Bash({...baseOptions, fs: mountableFs, cwd: config.INITIAL_CWD})
+ }
 
-	// Check for read-write filesystem configuration
-	if (config.READ_WRITE_ROOT) {
-		const rwfs = new ReadWriteFs({
-			root: config.READ_WRITE_ROOT,
-			...(config.MAX_FILE_READ_SIZE !== undefined && {
-				maxFileReadSize: config.MAX_FILE_READ_SIZE,
-			}),
-		});
-		return new Bash({
-			...baseOptions,
-			fs: rwfs,
-			cwd: config.READ_WRITE_ROOT,
-		});
-	}
+ // Check for read-write filesystem configuration
+ if (config.READ_WRITE_ROOT) {
+  const rwfs = new ReadWriteFs({root: config.READ_WRITE_ROOT, ...(config.MAX_FILE_READ_SIZE !== undefined && {maxFileReadSize: config.MAX_FILE_READ_SIZE})})
+  return new Bash({...baseOptions, fs: rwfs, cwd: config.READ_WRITE_ROOT})
+ }
 
-	// Check for overlay filesystem configuration
-	if (config.OVERLAY_ROOT) {
-		const overlay = new OverlayFs({
-			root: config.OVERLAY_ROOT,
-			readOnly: config.OVERLAY_READ_ONLY,
-			...(config.MAX_FILE_READ_SIZE !== undefined && {
-				maxFileReadSize: config.MAX_FILE_READ_SIZE,
-			}),
-		});
-		return new Bash({
-			...baseOptions,
-			fs: overlay,
-			cwd: overlay.getMountPoint(),
-		});
-	}
+ // Check for overlay filesystem configuration
+ if (config.OVERLAY_ROOT) {
+  const overlay = new OverlayFs({root: config.OVERLAY_ROOT, readOnly: config.OVERLAY_READ_ONLY, ...(config.MAX_FILE_READ_SIZE !== undefined && {maxFileReadSize: config.MAX_FILE_READ_SIZE})})
+  return new Bash({...baseOptions, fs: overlay, cwd: overlay.getMountPoint()})
+ }
 
-	// Default: in-memory filesystem
-	return new Bash({
-		...baseOptions,
-		cwd: config.INITIAL_CWD,
-	});
+ // Default: in-memory filesystem
+ return new Bash({...baseOptions, cwd: config.INITIAL_CWD})
 }
 
 // ============================================================================
 // Persistent Bash Instance (singleton pattern)
 // ============================================================================
 
-let persistentBash: Bash | null = null;
+let persistentBash: Bash | null = null
 
 /**
  * Get or create the persistent Bash instance
  */
 export function getPersistentBash(): Bash {
-	if (!persistentBash) {
-		persistentBash = createBashInstance();
-	}
-	return persistentBash;
+ if (!persistentBash) {
+  persistentBash = createBashInstance()
+ }
+ return persistentBash
 }
 
 /**
  * Reset the persistent Bash instance
  */
 export function resetPersistentBash(): void {
-	persistentBash = null;
+ persistentBash = null
 }
 
 // ============================================================================
 // Persistent Sandbox Instance (singleton pattern)
 // ============================================================================
 
-let persistentSandbox: Sandbox | null = null;
+let persistentSandbox: Sandbox | null = null
 
 /**
  * Get or create the persistent Sandbox instance.
  * Passes all available configuration including network and filesystem options.
  */
 export async function getPersistentSandbox(): Promise<Sandbox> {
-	if (!persistentSandbox) {
-		const networkConfig = buildNetworkConfig();
-		const options: SandboxOptions = {
-			cwd: config.INITIAL_CWD,
-			network: networkConfig,
-			maxCallDepth: config.MAX_CALL_DEPTH,
-			maxCommandCount: config.MAX_COMMAND_COUNT,
-			maxLoopIterations: config.MAX_LOOP_ITERATIONS,
-			...(config.OVERLAY_ROOT && { overlayRoot: config.OVERLAY_ROOT }),
-		};
-		persistentSandbox = await Sandbox.create(options);
-	}
-	return persistentSandbox;
+ if (!persistentSandbox) {
+  const networkConfig = buildNetworkConfig()
+  const options: SandboxOptions = {cwd: config.INITIAL_CWD, network: networkConfig, maxCallDepth: config.MAX_CALL_DEPTH, maxCommandCount: config.MAX_COMMAND_COUNT, maxLoopIterations: config.MAX_LOOP_ITERATIONS, ...(config.OVERLAY_ROOT && {overlayRoot: config.OVERLAY_ROOT})}
+  persistentSandbox = await Sandbox.create(options)
+ }
+ return persistentSandbox
 }
 
 /**
@@ -205,8 +140,8 @@ export async function getPersistentSandbox(): Promise<Sandbox> {
  * Calls Sandbox.stop() to clean up resources before releasing.
  */
 export async function resetPersistentSandbox(): Promise<void> {
-	if (persistentSandbox) {
-		await persistentSandbox.stop();
-	}
-	persistentSandbox = null;
+ if (persistentSandbox) {
+  await persistentSandbox.stop()
+ }
+ persistentSandbox = null
 }

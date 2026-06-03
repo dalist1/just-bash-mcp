@@ -7,11 +7,14 @@ An MCP (Model Context Protocol) server that provides a sandboxed bash environmen
 
 Execute bash commands in a secure, isolated environment with an in-memory virtual filesystem.
 
-Built on top of [`just-bash`](https://github.com/vercel-labs/just-bash) v2.12.5.
+Built on top of [`just-bash`](https://github.com/vercel-labs/just-bash) v3.0.1.
 
-## What's New in v2.9.5
+## What's New in v3.0.0
 
-- **Synced with upstream `just-bash` v2.12.5** - Full upstream commands, APIs, and type exports
+- **Synced with upstream `just-bash` v3.0.1** - Full upstream commands, APIs, and type exports
+- **Byte-safe stdin handling** - Tracks the upstream v3 TypeScript-enforced stdin byte/UTF-8 model
+- **Executor integration plumbing** - Includes upstream support for `js-exec` tool invocation hooks and executor package integration
+- **ESM runtime fix** - Includes the upstream v3.0.1 dynamic `require("tty")`/`file` command crash fix
 - **Persistent sandbox tools** - `bash_sandbox_*` tools remain available for higher-level isolated workflows
 - **Defense-in-depth mode** - Opt-in monkey-patching of dangerous JS globals (`JUST_BASH_DEFENSE_IN_DEPTH=true`)
 - **Python support** - Python3 via the upstream emscripten CPython runtime (`JUST_BASH_ENABLE_PYTHON=true`)
@@ -30,8 +33,16 @@ Built on top of [`just-bash`](https://github.com/vercel-labs/just-bash) v2.12.5.
 
 ## Synced Upstream Features
 
-The current wrapper release tracks `just-bash` `v2.12.5`, which brings in the post-`v2.10.2` upstream feature set, including:
+The current wrapper release tracks `just-bash` `v3.0.1`, which brings in the post-`v2.12.5` upstream feature set, including:
 
+- Breaking v3 stdin byte/UTF-8 handling updates for custom commands
+- Executor and `js-exec` integration plumbing
+- ESM Node bundle dynamic-require fix for commands that load `tty` transitively
+- `jq` control-character handling inside JSON strings
+- Faster `grep` pattern matching via matcher reuse and literal pre-filtering
+- AWK lexer fixes for POSIX multi-line statement continuation
+- Bug fixes across network, sqlite3, xan, rg, terminal rendering, and CI
+- Workspace/Changesets migration with unchanged public import paths and bin entries
 - Defense-in-depth hardening across the runtime and filesystem layers
 - Defense-in-depth enabled by default upstream, plus additional hardening passes
 - Filesystem hardening for overlays, external filesystems, symlinks, and broken symlink handling
@@ -42,7 +53,7 @@ The current wrapper release tracks `just-bash` `v2.12.5`, which brings in the po
 - UTF-8 handling and write-path fixes
 - CommonJS compatibility improvements upstream
 - `ls -F` / `--classify` support
-- Additional cleanup and internal hardening work shipped through `v2.12.5`
+- Additional cleanup and internal hardening work shipped through `v3.0.1`
 
 ## Installation
 
@@ -138,6 +149,8 @@ Add to your MCP settings:
 | `JUST_BASH_MAX_COMMAND_COUNT` | Maximum total commands per execution | `10000` |
 | `JUST_BASH_MAX_LOOP_ITERATIONS` | Maximum iterations per loop | `10000` |
 | `JUST_BASH_ENABLE_PYTHON` | Enable Python3 via emscripten CPython (`true`/`false`) | `false` |
+| `JUST_BASH_ENABLE_JAVASCRIPT` | Enable upstream `js-exec` via QuickJS (`true`/`false`) | `false` |
+| `JUST_BASH_JAVASCRIPT_BOOTSTRAP` | Bootstrap JavaScript code before each `js-exec` invocation | - |
 | `JUST_BASH_DEFENSE_IN_DEPTH` | Enable defense-in-depth mode (`true`/`false`) | `false` |
 | `JUST_BASH_DEFENSE_IN_DEPTH_AUDIT` | Audit mode: log violations but don't block | `false` |
 | `JUST_BASH_DEFENSE_IN_DEPTH_LOG` | Log violations to console | `false` |
@@ -149,6 +162,19 @@ Add to your MCP settings:
 | `JUST_BASH_ENABLE_TRACING` | Enable performance tracing | `false` |
 
 ## Tools
+
+### `bash`
+
+Execute bash commands in the sandbox environment. This is the upstream-compatible MCP exposure of the `just-bash`/`bash-tool` execute interface and accepts the same single `command` argument.
+
+```json
+{
+  "name": "bash",
+  "arguments": {
+    "command": "ls -la && cat package.json | head -5"
+  }
+}
+```
 
 ### `bash_exec`
 
@@ -209,7 +235,7 @@ Persistent isolated-environment helpers:
 `awk`, `base64`, `column`, `comm`, `cut`, `diff`, `expand`, `fold`, `grep` (+ `egrep`, `fgrep`), `head`, `join`, `md5sum`, `nl`, `od`, `paste`, `printf`, `rev`, `rg` (ripgrep), `sed`, `sha1sum`, `sha256sum`, `sort`, `strings`, `tac`, `tail`, `tr`, `unexpand`, `uniq`, `wc`, `xargs`
 
 ### Data Processing
-`jq` (JSON), `sqlite3` (SQLite), `xan` (CSV), `yq` (YAML/XML/TOML)
+`jq` (JSON), `js-exec` (JavaScript/TypeScript via QuickJS when enabled), `sqlite3` (SQLite), `xan` (CSV), `yq` (YAML/XML/TOML)
 
 ### Compression & Archives
 `gzip` (+ `gunzip`, `zcat`), `tar`
@@ -288,7 +314,7 @@ Persistent isolated-environment helpers:
 
 ## Upstream API Coverage
 
-This wrapper integrates the full public API surface of `just-bash` v2.12.5:
+This wrapper integrates the full public API surface of `just-bash` v3.0.1:
 
 | Category | Exports Used |
 |----------|-------------|
