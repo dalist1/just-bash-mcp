@@ -10,10 +10,68 @@
  */
 
 import type {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js'
-import {NetworkAccessDeniedError, RedirectNotAllowedError, SecurityViolationError, TooManyRedirectsError} from 'just-bash'
+import {type Bash, type InitialFiles, NetworkAccessDeniedError, RedirectNotAllowedError, SecurityViolationError, TooManyRedirectsError} from 'just-bash'
 import {z} from 'zod/v4'
-import {createErrorResponse, formatExecResult} from '../utils/index.ts'
-import {createBashInstance, getPersistentBash, resetPersistentBash} from './bash-instance.ts'
+import {createErrorResponse, decodeBase64, formatExecResult} from '../utils/index.js'
+import {createBashInstance, getPersistentBash, resetPersistentBash} from './bash-instance.js'
+
+interface ToolExecOptions {
+ cwd?: string
+ env?: Record<string, string>
+ replaceEnv?: boolean
+ stdin?: string
+ stdinBase64?: string
+ stdinKind?: 'text' | 'bytes'
+ args?: string[]
+ rawScript?: boolean
+ timeoutMs?: number
+}
+
+type InitialFileInput = string | {content: string; encoding?: 'utf-8' | 'base64'; mode?: number; mtime?: string}
+
+const initialFileSchema = z.union([z.string(), z.object({content: z.string(), encoding: z.enum(['utf-8', 'base64']).optional(), mode: z.number().int().nonnegative().optional(), mtime: z.string().datetime().optional()})])
+
+const execOptionSchema = {
+ cwd: z.string().optional().describe('Working directory for the command'),
+ env: z.record(z.string(), z.string()).optional().describe('Environment variables to set for this execution'),
+ replaceEnv: z.boolean().optional().describe('Start with an empty environment instead of merging env with the initial environment'),
+ stdin: z.string().optional().describe('Standard input to pass to the script'),
+ stdinBase64: z.string().optional().describe('Base64-encoded stdin. When set, stdinKind is forced to bytes and stdin is ignored'),
+ stdinKind: z.enum(['text', 'bytes']).optional().describe('How stdin is encoded: text UTF-8 encodes the string; bytes forwards a latin1-shaped byte buffer verbatim'),
+ args: z.array(z.string()).optional().describe('Additional argv entries appended to the first command without shell parsing'),
+ rawScript: z.boolean().optional().describe('If true, skip normalizing the script (preserves leading whitespace). Useful for here-docs.'),
+ timeoutMs: z.number().int().positive().optional().describe('Cooperatively abort execution after this many milliseconds')
+} as const
+
+async function execWithOptions(bash: Bash, command: string, options: ToolExecOptions = {}) {
+ const {timeoutMs, stdinBase64, ...execOptions} = options
+ const resolvedOptions = stdinBase64 === undefined ? execOptions : {...execOptions, stdin: decodeBase64(stdinBase64).toString('latin1'), stdinKind: 'bytes' as const}
+ if (!timeoutMs) {
+  return bash.exec(command, resolvedOptions)
+ }
+
+ const controller = new AbortController()
+ const timeout = setTimeout(() => controller.abort(), timeoutMs)
+ try {
+  return await bash.exec(command, {...resolvedOptions, signal: controller.signal})
+ } finally {
+  clearTimeout(timeout)
+ }
+}
+
+function normalizeInitialFiles(files: Record<string, InitialFileInput> | undefined): InitialFiles | undefined {
+ if (!files) return undefined
+ const normalized: InitialFiles = {}
+ for (const [path, value] of Object.entries(files)) {
+  if (typeof value === 'string') {
+   normalized[path] = value
+   continue
+  }
+
+  normalized[path] = {content: value.encoding === 'base64' ? decodeBase64(value.content) : value.content, ...(value.mode !== undefined && {mode: value.mode}), ...(value.mtime && {mtime: new Date(value.mtime)})}
+ }
+ return normalized
+}
 
 /**
  * Classify errors from just-bash into user-friendly messages.
@@ -62,20 +120,18 @@ export function registerExecTools(server: McpServer): void {
  server.registerTool(
   'bash_exec',
   {
-   description: "Execute a bash command in a sandboxed environment. Each execution is isolated - environment variables, functions, and cwd don't persist across calls (filesystem does).",
+   description: "Execute a bash command in a fresh sandboxed environment. Environment variables, functions, cwd, and in-memory filesystem writes don't persist across calls.",
    inputSchema: {
     command: z.string().describe('The bash command to execute'),
-    cwd: z.string().optional().describe('Working directory for the command'),
-    env: z.record(z.string(), z.string()).optional().describe('Environment variables to set for execution'),
     initialEnv: z.record(z.string(), z.string()).optional().describe('Initial environment variables to set when creating the bash instance'),
-    files: z.record(z.string(), z.string()).optional().describe('Files to create before execution (path -> content)'),
-    rawScript: z.boolean().optional().describe('If true, skip normalizing the script (preserves leading whitespace). Useful for here-docs.')
+    files: z.record(z.string(), initialFileSchema).optional().describe('Files to create before execution (path -> content or {content, encoding, mode, mtime})'),
+    ...execOptionSchema
    }
   },
-  async ({command, cwd, env, initialEnv, files, rawScript}: {command: string; cwd?: string; env?: Record<string, string>; initialEnv?: Record<string, string>; files?: Record<string, string>; rawScript?: boolean}) => {
+  async ({command, initialEnv, files, ...options}: {command: string; initialEnv?: Record<string, string>; files?: Record<string, InitialFileInput>} & ToolExecOptions) => {
    try {
-    const bash = createBashInstance(files, undefined, initialEnv)
-    const result = await bash.exec(command, {cwd, env, rawScript})
+    const bash = createBashInstance(normalizeInitialFiles(files), undefined, initialEnv)
+    const result = await execWithOptions(bash, command, options)
     return formatExecResult(result)
    } catch (error) {
     return classifyError(error, 'Execution error')
@@ -88,19 +144,11 @@ export function registerExecTools(server: McpServer): void {
  // ========================================================================
  server.registerTool(
   'bash_exec_persistent',
-  {
-   description: 'Execute a bash command in a persistent sandboxed environment. The filesystem persists across calls, but env vars, functions, and cwd are reset each call.',
-   inputSchema: {
-    command: z.string().describe('The bash command to execute'),
-    cwd: z.string().optional().describe('Working directory for the command'),
-    env: z.record(z.string(), z.string()).optional().describe('Environment variables to set'),
-    rawScript: z.boolean().optional().describe('If true, skip normalizing the script (preserves leading whitespace). Useful for here-docs.')
-   }
-  },
-  async ({command, cwd, env, rawScript}: {command: string; cwd?: string; env?: Record<string, string>; rawScript?: boolean}) => {
+  {description: 'Execute a bash command in a persistent sandboxed environment. The filesystem persists across calls, but env vars, functions, and cwd are reset each call.', inputSchema: {command: z.string().describe('The bash command to execute'), ...execOptionSchema}},
+  async ({command, ...options}: {command: string} & ToolExecOptions) => {
    try {
     const bash = getPersistentBash()
-    const result = await bash.exec(command, {cwd, env, rawScript})
+    const result = await execWithOptions(bash, command, options)
     return formatExecResult(result)
    } catch (error) {
     return classifyError(error, 'Execution error')

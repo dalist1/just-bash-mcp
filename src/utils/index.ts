@@ -2,7 +2,18 @@
  * Utility functions for just-bash-mcp
  */
 
-import {config} from '../config/index.ts'
+import {config} from '../config/index.js'
+
+export function decodeBase64(value: string): Buffer {
+ const compact = value.replace(/\s/g, '')
+ const paddingIndex = compact.indexOf('=')
+ const data = paddingIndex === -1 ? compact : compact.slice(0, paddingIndex)
+ const padding = paddingIndex === -1 ? '' : compact.slice(paddingIndex)
+ if (!/^[A-Za-z0-9+/]*$/.test(data) || !/^={0,2}$/.test(padding) || compact.length % 4 === 1 || (padding.length > 0 && compact.length % 4 !== 0)) {
+  throw new Error('Invalid base64 content')
+ }
+ return Buffer.from(compact, 'base64')
+}
 
 /**
  * Truncate output to maximum length with notification message
@@ -44,6 +55,17 @@ export function createJsonResponse(data: unknown, isError = false): {content: Ar
 /**
  * Format bash execution result for MCP response
  */
-export function formatExecResult(result: {stdout: string; stderr: string; exitCode: number; env?: Record<string, string>}): {content: Array<{type: 'text'; text: string}>; isError?: boolean} {
- return createJsonResponse({stdout: truncateOutput(result.stdout, config.MAX_OUTPUT_LENGTH, 'stdout'), stderr: truncateOutput(result.stderr, config.MAX_OUTPUT_LENGTH, 'stderr'), exitCode: result.exitCode, ...(result.env && {env: result.env})}, result.exitCode !== 0)
+export function formatExecResult(result: {stdout: string; stderr: string; exitCode: number; env?: Record<string, string>; stdoutKind?: 'text' | 'bytes'; stdoutEncoding?: 'binary'; metadata?: Record<string, unknown>}): {content: Array<{type: 'text'; text: string}>; isError?: boolean} {
+ return createJsonResponse(
+  {
+   stdout: truncateOutput(result.stdout, config.MAX_OUTPUT_LENGTH, 'stdout'),
+   stderr: truncateOutput(result.stderr, config.MAX_OUTPUT_LENGTH, 'stderr'),
+   exitCode: result.exitCode,
+   ...(result.env && {env: result.env}),
+   ...(result.stdoutKind && {stdoutKind: result.stdoutKind}),
+   ...(result.stdoutEncoding && {stdoutEncoding: result.stdoutEncoding}),
+   ...(result.metadata && {metadata: result.metadata})
+  },
+  result.exitCode !== 0
+ )
 }

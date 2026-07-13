@@ -3,7 +3,7 @@
  * Handles environment variable parsing and configuration building
  */
 
-import {type BashLogger, type BashOptions, type CommandName, type MountConfig, type NetworkConfig, OverlayFs, ReadWriteFs, SecurityViolationLogger, createConsoleViolationCallback} from 'just-bash'
+import {type AllowedUrl, type AllowedUrlEntry, type BashLogger, type BashOptions, type CommandName, type MountConfig, type NetworkConfig, OverlayFs, ReadWriteFs, SecurityViolationLogger, createConsoleViolationCallback} from 'just-bash'
 import {readFileSync} from 'node:fs'
 import {dirname, join} from 'node:path'
 import {fileURLToPath} from 'node:url'
@@ -79,7 +79,17 @@ function parseEnvString(key: string, defaultValue: string): string {
 }
 
 function parseEnvBoolean(key: string, defaultValue: boolean): boolean {
- return process.env[key] === 'true' ? true : defaultValue
+ const value = process.env[key]
+ if (value === 'true') return true
+ if (value === 'false') return false
+ return defaultValue
+}
+
+function parseEnvOptionalBoolean(key: string): boolean | undefined {
+ const value = process.env[key]
+ if (value === 'true') return true
+ if (value === 'false') return false
+ return undefined
 }
 
 function parseEnvInt(key: string, defaultValue: number): number {
@@ -90,7 +100,32 @@ function parseEnvInt(key: string, defaultValue: number): number {
 }
 
 function parseEnvStringArray(key: string): string[] {
- return process.env[key]?.split(',').filter(Boolean) || []
+ return (
+  process.env[key]
+   ?.split(',')
+   .map(value => value.trim())
+   .filter(Boolean) || []
+ )
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+ return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+ if (!isRecord(value)) return false
+ return Object.values(value).every(entry => typeof entry === 'string')
+}
+
+function parseEnvJsonObject(key: string): Record<string, string> | undefined {
+ const value = process.env[key]
+ if (!value) return undefined
+ try {
+  const parsed: unknown = JSON.parse(value)
+  return isStringRecord(parsed) ? parsed : undefined
+ } catch {
+  return undefined
+ }
 }
 
 // ============================================================================
@@ -114,26 +149,35 @@ export interface Config {
  readonly MOUNTS_CONFIG: string | undefined
  readonly INITIAL_CWD: string
  readonly ALLOW_NETWORK: boolean
- readonly ALLOWED_URL_PREFIXES: string[]
+ readonly ALLOWED_URL_PREFIXES: AllowedUrlEntry[]
  readonly ALLOWED_METHODS: HttpMethod[]
+ readonly DENY_PRIVATE_RANGES: boolean | undefined
  readonly MAX_REDIRECTS: number
  readonly NETWORK_TIMEOUT_MS: number
  readonly MAX_RESPONSE_SIZE: number | undefined
+ readonly INITIAL_ENV: Record<string, string> | undefined
  readonly MAX_CALL_DEPTH: number
  readonly MAX_COMMAND_COUNT: number
  readonly MAX_LOOP_ITERATIONS: number
  readonly MAX_AWK_ITERATIONS: number
  readonly MAX_SED_ITERATIONS: number
  readonly MAX_JQ_ITERATIONS: number
+ readonly MAX_JS_TIMEOUT_MS: number
  readonly MAX_GLOB_OPERATIONS: number
  readonly MAX_STRING_LENGTH: number
  readonly MAX_ARRAY_ELEMENTS: number
  readonly MAX_HEREDOC_SIZE: number
  readonly MAX_SUBSTITUTION_DEPTH: number
+ readonly MAX_BRACE_EXPANSION_RESULTS: number
+ readonly MAX_EXEC_OUTPUT_SIZE: number
+ readonly MAX_FILE_DESCRIPTORS: number
+ readonly MAX_SOURCE_DEPTH: number
  readonly MAX_SQLITE_TIMEOUT_MS: number
  readonly MAX_PYTHON_TIMEOUT_MS: number
  readonly MAX_OUTPUT_LENGTH: number
  readonly MAX_FILE_READ_SIZE: number | undefined
+ readonly PROCESS_INFO: NonNullable<BashOptions['processInfo']> | undefined
+ readonly SANDBOX_TIMEOUT_MS: number | undefined
  readonly ENABLE_LOGGING: boolean
  readonly ENABLE_TRACING: boolean
  readonly ENABLE_PYTHON: boolean
@@ -161,8 +205,37 @@ export const WRAPPER_VERSION = readPackageVersion('../../package.json')
 export const UPSTREAM_JUST_BASH_VERSION = readPackageVersion('../../node_modules/just-bash/package.json')
 
 function getAllowedMethods(): HttpMethod[] {
- const methods = parseEnvStringArray('JUST_BASH_ALLOWED_METHODS')
+ const methods = parseEnvStringArray('JUST_BASH_ALLOWED_METHODS').map(method => method.toUpperCase())
+ const supportedMethods: HttpMethod[] = ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
+ const invalidMethod = methods.find(method => !supportedMethods.includes(method as HttpMethod))
+ if (invalidMethod) {
+  throw new Error(`Invalid JUST_BASH_ALLOWED_METHODS entry: ${invalidMethod}`)
+ }
  return methods.length > 0 ? (methods as HttpMethod[]) : ['GET', 'HEAD']
+}
+
+function isAllowedUrl(value: unknown): value is AllowedUrl {
+ if (!isRecord(value) || typeof value.url !== 'string') return false
+ if (value.transform === undefined) return true
+ if (!Array.isArray(value.transform)) return false
+ return value.transform.every(transform => isRecord(transform) && isStringRecord(transform.headers))
+}
+
+function getAllowedUrlPrefixes(): AllowedUrlEntry[] {
+ const json = process.env.JUST_BASH_ALLOWED_URLS_JSON
+ if (json) {
+  try {
+   const parsed: unknown = JSON.parse(json)
+   if (Array.isArray(parsed) && parsed.every(entry => typeof entry === 'string' || isAllowedUrl(entry))) {
+    return parsed
+   }
+  } catch (error) {
+   throw new Error(`Invalid JUST_BASH_ALLOWED_URLS_JSON: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  throw new Error('Invalid JUST_BASH_ALLOWED_URLS_JSON: expected an array of strings or {url, transform:[{headers}]} entries')
+ }
+
+ return parseEnvStringArray('JUST_BASH_ALLOWED_URLS')
 }
 
 function getAllowedCommands(): CommandName[] | undefined {
@@ -175,6 +248,26 @@ function parseEnvOptionalInt(key: string): number | undefined {
  if (!value) return undefined
  const parsed = Number.parseInt(value, 10)
  return Number.isNaN(parsed) ? undefined : parsed
+}
+
+function getProcessInfo(): NonNullable<BashOptions['processInfo']> | undefined {
+ const json = process.env.JUST_BASH_PROCESS_INFO
+ if (json) {
+  try {
+   const parsed: unknown = JSON.parse(json)
+   if (!isRecord(parsed)) return undefined
+   return {...(typeof parsed.pid === 'number' && {pid: parsed.pid}), ...(typeof parsed.ppid === 'number' && {ppid: parsed.ppid}), ...(typeof parsed.uid === 'number' && {uid: parsed.uid}), ...(typeof parsed.gid === 'number' && {gid: parsed.gid})}
+  } catch {
+   return undefined
+  }
+ }
+
+ const pid = parseEnvOptionalInt('JUST_BASH_PID')
+ const ppid = parseEnvOptionalInt('JUST_BASH_PPID')
+ const uid = parseEnvOptionalInt('JUST_BASH_UID')
+ const gid = parseEnvOptionalInt('JUST_BASH_GID')
+ if (pid === undefined && ppid === undefined && uid === undefined && gid === undefined) return undefined
+ return {...(pid !== undefined && {pid}), ...(ppid !== undefined && {ppid}), ...(uid !== undefined && {uid}), ...(gid !== undefined && {gid})}
 }
 
 export const config: Config = {
@@ -190,11 +283,15 @@ export const config: Config = {
 
  // Network configuration
  ALLOW_NETWORK: parseEnvBoolean('JUST_BASH_ALLOW_NETWORK', false),
- ALLOWED_URL_PREFIXES: parseEnvStringArray('JUST_BASH_ALLOWED_URLS'),
+ ALLOWED_URL_PREFIXES: getAllowedUrlPrefixes(),
  ALLOWED_METHODS: getAllowedMethods(),
+ DENY_PRIVATE_RANGES: parseEnvOptionalBoolean('JUST_BASH_DENY_PRIVATE_RANGES'),
  MAX_REDIRECTS: parseEnvInt('JUST_BASH_MAX_REDIRECTS', 20),
  NETWORK_TIMEOUT_MS: parseEnvInt('JUST_BASH_NETWORK_TIMEOUT_MS', 30000),
  MAX_RESPONSE_SIZE: parseEnvOptionalInt('JUST_BASH_MAX_RESPONSE_SIZE'),
+
+ // Initial environment
+ INITIAL_ENV: parseEnvJsonObject('JUST_BASH_INITIAL_ENV'),
 
  // Execution limits
  MAX_CALL_DEPTH: parseEnvInt('JUST_BASH_MAX_CALL_DEPTH', 100),
@@ -203,19 +300,28 @@ export const config: Config = {
  MAX_AWK_ITERATIONS: parseEnvInt('JUST_BASH_MAX_AWK_ITERATIONS', 10000),
  MAX_SED_ITERATIONS: parseEnvInt('JUST_BASH_MAX_SED_ITERATIONS', 10000),
  MAX_JQ_ITERATIONS: parseEnvInt('JUST_BASH_MAX_JQ_ITERATIONS', 10000),
+ MAX_JS_TIMEOUT_MS: parseEnvInt('JUST_BASH_MAX_JS_TIMEOUT_MS', 10000),
  MAX_GLOB_OPERATIONS: parseEnvInt('JUST_BASH_MAX_GLOB_OPERATIONS', 100000),
  MAX_STRING_LENGTH: parseEnvInt('JUST_BASH_MAX_STRING_LENGTH', 10485760),
  MAX_ARRAY_ELEMENTS: parseEnvInt('JUST_BASH_MAX_ARRAY_ELEMENTS', 100000),
  MAX_HEREDOC_SIZE: parseEnvInt('JUST_BASH_MAX_HEREDOC_SIZE', 10485760),
  MAX_SUBSTITUTION_DEPTH: parseEnvInt('JUST_BASH_MAX_SUBSTITUTION_DEPTH', 50),
+ MAX_BRACE_EXPANSION_RESULTS: parseEnvInt('JUST_BASH_MAX_BRACE_EXPANSION_RESULTS', 10000),
+ MAX_EXEC_OUTPUT_SIZE: parseEnvInt('JUST_BASH_MAX_EXEC_OUTPUT_SIZE', 10485760),
+ MAX_FILE_DESCRIPTORS: parseEnvInt('JUST_BASH_MAX_FILE_DESCRIPTORS', 1024),
+ MAX_SOURCE_DEPTH: parseEnvInt('JUST_BASH_MAX_SOURCE_DEPTH', 100),
  MAX_SQLITE_TIMEOUT_MS: parseEnvInt('JUST_BASH_MAX_SQLITE_TIMEOUT_MS', 5000),
- MAX_PYTHON_TIMEOUT_MS: parseEnvInt('JUST_BASH_MAX_PYTHON_TIMEOUT_MS', 30000),
+ MAX_PYTHON_TIMEOUT_MS: parseEnvInt('JUST_BASH_MAX_PYTHON_TIMEOUT_MS', 10000),
 
  // Output limits
  MAX_OUTPUT_LENGTH: parseEnvInt('JUST_BASH_MAX_OUTPUT_LENGTH', 30000),
 
  // Filesystem limits
  MAX_FILE_READ_SIZE: parseEnvOptionalInt('JUST_BASH_MAX_FILE_READ_SIZE'),
+
+ // Virtual process and Sandbox API configuration
+ PROCESS_INFO: getProcessInfo(),
+ SANDBOX_TIMEOUT_MS: parseEnvOptionalInt('JUST_BASH_SANDBOX_TIMEOUT_MS'),
 
  // Debugging
  ENABLE_LOGGING: parseEnvBoolean('JUST_BASH_ENABLE_LOGGING', false),
@@ -225,7 +331,7 @@ export const config: Config = {
  ENABLE_PYTHON: parseEnvBoolean('JUST_BASH_ENABLE_PYTHON', false),
  ENABLE_JAVASCRIPT: parseEnvBoolean('JUST_BASH_ENABLE_JAVASCRIPT', false),
  JAVASCRIPT_BOOTSTRAP: process.env.JUST_BASH_JAVASCRIPT_BOOTSTRAP,
- ENABLE_DEFENSE_IN_DEPTH: parseEnvBoolean('JUST_BASH_DEFENSE_IN_DEPTH', false),
+ ENABLE_DEFENSE_IN_DEPTH: parseEnvBoolean('JUST_BASH_DEFENSE_IN_DEPTH', true),
  DEFENSE_IN_DEPTH_AUDIT: parseEnvBoolean('JUST_BASH_DEFENSE_IN_DEPTH_AUDIT', false),
  DEFENSE_IN_DEPTH_LOG: parseEnvBoolean('JUST_BASH_DEFENSE_IN_DEPTH_LOG', false),
  OVERLAY_READ_ONLY: parseEnvBoolean('JUST_BASH_OVERLAY_READ_ONLY', false),
@@ -331,10 +437,17 @@ export function buildNetworkConfig(): NetworkConfig | undefined {
  }
 
  if (config.ALLOWED_URL_PREFIXES.length > 0) {
-  return {allowedUrlPrefixes: config.ALLOWED_URL_PREFIXES, allowedMethods: config.ALLOWED_METHODS, maxRedirects: config.MAX_REDIRECTS, timeoutMs: config.NETWORK_TIMEOUT_MS, ...(config.MAX_RESPONSE_SIZE !== undefined && {maxResponseSize: config.MAX_RESPONSE_SIZE})}
+  return {
+   allowedUrlPrefixes: config.ALLOWED_URL_PREFIXES,
+   allowedMethods: config.ALLOWED_METHODS,
+   maxRedirects: config.MAX_REDIRECTS,
+   timeoutMs: config.NETWORK_TIMEOUT_MS,
+   ...(config.DENY_PRIVATE_RANGES !== undefined && {denyPrivateRanges: config.DENY_PRIVATE_RANGES}),
+   ...(config.MAX_RESPONSE_SIZE !== undefined && {maxResponseSize: config.MAX_RESPONSE_SIZE})
+  }
  }
 
- return {dangerouslyAllowFullInternetAccess: true, maxRedirects: config.MAX_REDIRECTS, timeoutMs: config.NETWORK_TIMEOUT_MS, ...(config.MAX_RESPONSE_SIZE !== undefined && {maxResponseSize: config.MAX_RESPONSE_SIZE})}
+ return {dangerouslyAllowFullInternetAccess: true, maxRedirects: config.MAX_REDIRECTS, timeoutMs: config.NETWORK_TIMEOUT_MS, ...(config.DENY_PRIVATE_RANGES !== undefined && {denyPrivateRanges: config.DENY_PRIVATE_RANGES}), ...(config.MAX_RESPONSE_SIZE !== undefined && {maxResponseSize: config.MAX_RESPONSE_SIZE})}
 }
 
 export function buildExecutionLimits(): NonNullable<BashOptions['executionLimits']> {
@@ -345,11 +458,16 @@ export function buildExecutionLimits(): NonNullable<BashOptions['executionLimits
   maxAwkIterations: config.MAX_AWK_ITERATIONS,
   maxSedIterations: config.MAX_SED_ITERATIONS,
   maxJqIterations: config.MAX_JQ_ITERATIONS,
+  maxJsTimeoutMs: config.MAX_JS_TIMEOUT_MS,
   maxGlobOperations: config.MAX_GLOB_OPERATIONS,
   maxStringLength: config.MAX_STRING_LENGTH,
   maxArrayElements: config.MAX_ARRAY_ELEMENTS,
   maxHeredocSize: config.MAX_HEREDOC_SIZE,
   maxSubstitutionDepth: config.MAX_SUBSTITUTION_DEPTH,
+  maxBraceExpansionResults: config.MAX_BRACE_EXPANSION_RESULTS,
+  maxOutputSize: config.MAX_EXEC_OUTPUT_SIZE,
+  maxFileDescriptors: config.MAX_FILE_DESCRIPTORS,
+  maxSourceDepth: config.MAX_SOURCE_DEPTH,
   maxSqliteTimeoutMs: config.MAX_SQLITE_TIMEOUT_MS,
   maxPythonTimeoutMs: config.MAX_PYTHON_TIMEOUT_MS
  }
@@ -381,9 +499,12 @@ export const ENVIRONMENT_VARIABLES = {
  JUST_BASH_READ_WRITE_ROOT: 'Real directory with read-write access',
  JUST_BASH_MOUNTS: 'JSON array of mount configurations (supports type, readOnly fields)',
  JUST_BASH_CWD: 'Initial working directory (default: /home/user)',
+ JUST_BASH_INITIAL_ENV: 'JSON object of initial environment variables, e.g. {"TZ":"UTC"}',
  JUST_BASH_ALLOW_NETWORK: 'Enable network access (default: false)',
  JUST_BASH_ALLOWED_URLS: 'Comma-separated URL prefixes to allow',
+ JUST_BASH_ALLOWED_URLS_JSON: 'JSON array of URL strings or {url, transform:[{headers}]} entries for upstream credential transforms',
  JUST_BASH_ALLOWED_METHODS: 'Comma-separated HTTP methods (default: GET,HEAD)',
+ JUST_BASH_DENY_PRIVATE_RANGES: 'Reject private/loopback IP ranges for network requests (upstream default: true in production, false otherwise)',
  JUST_BASH_ALLOWED_COMMANDS: 'Comma-separated list of allowed commands',
  JUST_BASH_MAX_REDIRECTS: 'Max HTTP redirects (default: 20)',
  JUST_BASH_NETWORK_TIMEOUT_MS: 'Network timeout in ms (default: 30000)',
@@ -394,21 +515,32 @@ export const ENVIRONMENT_VARIABLES = {
  JUST_BASH_MAX_AWK_ITERATIONS: 'Max AWK while/for loop iterations (default: 10000)',
  JUST_BASH_MAX_SED_ITERATIONS: 'Max sed branch loop iterations (default: 10000)',
  JUST_BASH_MAX_JQ_ITERATIONS: 'Max jq loop iterations (default: 10000)',
+ JUST_BASH_MAX_JS_TIMEOUT_MS: 'Max JavaScript/js-exec timeout in ms (default: 10000)',
  JUST_BASH_MAX_GLOB_OPERATIONS: 'Max glob filesystem operations (default: 100000)',
  JUST_BASH_MAX_STRING_LENGTH: 'Max string length in bytes (default: 10485760 = 10MB)',
  JUST_BASH_MAX_ARRAY_ELEMENTS: 'Max array elements (default: 100000)',
  JUST_BASH_MAX_HEREDOC_SIZE: 'Max heredoc size in bytes (default: 10485760 = 10MB)',
  JUST_BASH_MAX_SUBSTITUTION_DEPTH: 'Max command substitution nesting depth (default: 50)',
+ JUST_BASH_MAX_BRACE_EXPANSION_RESULTS: 'Max brace expansion results (default: 10000)',
+ JUST_BASH_MAX_EXEC_OUTPUT_SIZE: 'Max total upstream exec output size in bytes (default: 10485760 = 10MB)',
+ JUST_BASH_MAX_FILE_DESCRIPTORS: 'Max open file descriptors (default: 1024)',
+ JUST_BASH_MAX_SOURCE_DEPTH: 'Max source/. nesting depth (default: 100)',
  JUST_BASH_MAX_SQLITE_TIMEOUT_MS: 'SQLite timeout in ms (default: 5000)',
- JUST_BASH_MAX_PYTHON_TIMEOUT_MS: 'Python timeout in ms (default: 30000)',
+ JUST_BASH_MAX_PYTHON_TIMEOUT_MS: 'Python timeout in ms (default: 10000)',
  JUST_BASH_MAX_OUTPUT_LENGTH: 'Max output length (default: 30000)',
  JUST_BASH_MAX_FILE_READ_SIZE: 'Max file read size in bytes for OverlayFs/ReadWriteFs (default: 10MB)',
+ JUST_BASH_PROCESS_INFO: 'JSON object overriding virtual process info {pid,ppid,uid,gid}',
+ JUST_BASH_PID: 'Virtual PID exposed to scripts (alternative to JUST_BASH_PROCESS_INFO)',
+ JUST_BASH_PPID: 'Virtual parent PID exposed to scripts (alternative to JUST_BASH_PROCESS_INFO)',
+ JUST_BASH_UID: 'Virtual UID exposed to scripts (alternative to JUST_BASH_PROCESS_INFO)',
+ JUST_BASH_GID: 'Virtual GID exposed to scripts (alternative to JUST_BASH_PROCESS_INFO)',
+ JUST_BASH_SANDBOX_TIMEOUT_MS: 'Default timeout for bash_sandbox_* commands in milliseconds',
  JUST_BASH_ENABLE_LOGGING: 'Enable debug logging (default: false)',
  JUST_BASH_ENABLE_TRACING: 'Enable performance tracing (default: false)',
  JUST_BASH_ENABLE_PYTHON: 'Enable python3/python commands via the upstream emscripten CPython runtime (default: false)',
  JUST_BASH_ENABLE_JAVASCRIPT: 'Enable js-exec command via the upstream QuickJS runtime (default: false)',
  JUST_BASH_JAVASCRIPT_BOOTSTRAP: 'Bootstrap JavaScript code to run before each js-exec invocation',
- JUST_BASH_DEFENSE_IN_DEPTH: 'Enable defense-in-depth mode that patches dangerous JS globals (default: false)',
+ JUST_BASH_DEFENSE_IN_DEPTH: 'Enable defense-in-depth mode that patches dangerous JS globals (default: true; set false to disable)',
  JUST_BASH_DEFENSE_IN_DEPTH_AUDIT: "Audit mode: log violations but don't block them (default: false, requires DEFENSE_IN_DEPTH=true)",
  JUST_BASH_DEFENSE_IN_DEPTH_LOG: 'Log violations to console via createConsoleViolationCallback (default: false)'
 } as const
@@ -420,7 +552,7 @@ export const ENVIRONMENT_VARIABLES = {
 export const COMMAND_CATEGORIES = {
  fileOperations: 'cat, cp, file, ln, ls, mkdir, mv, readlink, rm, rmdir, split, stat, touch, tree',
  textProcessing: 'awk, base64, column, comm, cut, diff, expand, fold, grep (egrep, fgrep), head, join, md5sum, nl, od, paste, printf, rev, rg (ripgrep), sed, sha1sum, sha256sum, sort, strings, tac, tail, tr, unexpand, uniq, wc, xargs',
- dataProcessing: 'jq (JSON), js-exec (JavaScript/TypeScript via QuickJS), python3/python (Python via emscripten CPython), sqlite3 (SQLite), xan (CSV), yq (YAML/XML/TOML/CSV)',
+ dataProcessing: 'jq (JSON), js-exec (JavaScript/TypeScript via QuickJS; node compatibility notice), python3/python (Python via emscripten CPython), sqlite3 (SQLite), xan (CSV), yq (YAML/XML/TOML/CSV)',
  compression: 'gzip (gunzip, zcat), tar',
  navigation: 'basename, cd, dirname, du, echo, env, export, find, hostname, printenv, pwd, tee, whoami',
  shellUtilities: 'alias, bash, chmod, clear, date, expr, false, help, history, seq, sh, sleep, time, timeout, true, unalias, which',
@@ -437,14 +569,20 @@ export const FEATURES = {
  logger: 'Optional execution logging via BashLogger interface',
  trace: 'Performance profiling via TraceCallback (upstream type)',
  commandFilter: 'Restrict available commands via JUST_BASH_ALLOWED_COMMANDS env var',
- sandboxApi: 'Additional persistent sandbox tools via bash_sandbox_* (run, write, read, mkdir, stop, reset)',
+ sandboxApi: 'Additional persistent sandbox tools via bash_sandbox_* (run, write, read, mkdir, extend_timeout, stop, reset)',
+ transformApi: 'bash_transform exposes upstream BashTransformPipeline, CommandCollectorPlugin, and TeePlugin without executing scripts',
+ execOptions: 'MCP execution tools expose upstream exec options: cwd, env, replaceEnv, stdin/stdinKind, args, rawScript, AbortSignal-backed timeoutMs, and stdinBase64 for byte stdin',
  upstreamBashTool: 'MCP tool named bash mirrors the upstream bash-tool execute interface with a single command argument',
  python: 'Python support via the upstream emscripten CPython runtime (opt-in via JUST_BASH_ENABLE_PYTHON=true)',
  javascript: 'JavaScript/TypeScript support via upstream js-exec and optional invokeTool hook (opt-in via JUST_BASH_ENABLE_JAVASCRIPT=true or setJavaScriptToolHandler)',
- defenseInDepth: 'Defense-in-depth with SecurityViolationLogger, audit mode, and console logging (opt-in via JUST_BASH_DEFENSE_IN_DEPTH=true)',
+ defenseInDepth: 'Defense-in-depth with SecurityViolationLogger, audit mode, and console logging (enabled by default; set JUST_BASH_DEFENSE_IN_DEPTH=false to disable)',
  overlayReadOnly: 'Read-only overlay filesystem mode (opt-in via JUST_BASH_OVERLAY_READ_ONLY=true)',
  networkResponseSize: 'Configurable max network response body size via JUST_BASH_MAX_RESPONSE_SIZE',
+ networkTransforms: 'Upstream allowedUrlPrefixes credential transforms via JUST_BASH_ALLOWED_URLS_JSON',
+ networkDenyPrivateRanges: 'Private/loopback IP blocking via JUST_BASH_DENY_PRIVATE_RANGES, preserving the upstream production default when unset',
  fileReadSizeLimit: 'Configurable max file read size for OverlayFs/ReadWriteFs via JUST_BASH_MAX_FILE_READ_SIZE',
+ virtualProcessInfo: 'Override upstream virtual PID/UID values via JUST_BASH_PROCESS_INFO or JUST_BASH_PID/PPID/UID/GID',
+ binaryFileIo: 'Persistent file tools support base64 read/write paths for byte-safe file content',
  networkErrorHandling: 'Rich network error classification: NetworkAccessDeniedError, TooManyRedirectsError, RedirectNotAllowedError',
  securityViolationTracking: 'SecurityViolationLogger tracks all defense-in-depth violations with stats via bash_info'
 } as const

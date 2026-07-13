@@ -8,9 +8,17 @@
 
 import type {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js'
 import {type AllCommandName, type CommandName, getCommandNames, getJavaScriptCommandNames, getNetworkCommandNames, getPythonCommandNames} from 'just-bash'
-import {buildExecutionLimits, COMMAND_CATEGORIES, config, ENVIRONMENT_VARIABLES, FEATURES, parseMountsConfig, UPSTREAM_JUST_BASH_VERSION, violationLogger} from '../config/index.ts'
-import {createErrorResponse, createJsonResponse} from '../utils/index.ts'
-import {getDefenseInDepthBox, getPersistentBash} from './bash-instance.ts'
+import {buildExecutionLimits, COMMAND_CATEGORIES, config, ENVIRONMENT_VARIABLES, FEATURES, parseMountsConfig, UPSTREAM_JUST_BASH_VERSION, violationLogger} from '../config/index.js'
+import {createErrorResponse, createJsonResponse} from '../utils/index.js'
+import {getDefenseInDepthBox, getPersistentBash} from './bash-instance.js'
+
+function redactAllowedUrlPrefixes(): unknown[] | null {
+ if (config.ALLOWED_URL_PREFIXES.length === 0) return null
+ return config.ALLOWED_URL_PREFIXES.map(entry => {
+  if (typeof entry === 'string') return entry
+  return {url: entry.url, ...(entry.transform && {transform: entry.transform.map(transform => ({headers: Object.fromEntries(Object.keys(transform.headers).map(header => [header, '[redacted]']))}))})}
+ })
+}
 
 /**
  * Register information tools with the MCP server
@@ -49,11 +57,16 @@ export function registerInfoTools(server: McpServer): void {
    mounts: mounts.length > 0 ? mounts.map(m => ({mountPoint: m.mountPoint})) : null,
    initialCwd: config.INITIAL_CWD,
    networkEnabled: config.ALLOW_NETWORK,
-   allowedUrlPrefixes: config.ALLOWED_URL_PREFIXES.length > 0 ? config.ALLOWED_URL_PREFIXES : null,
+   allowedUrlPrefixes: redactAllowedUrlPrefixes(),
    allowedMethods: config.ALLOW_NETWORK ? config.ALLOWED_METHODS : null,
    maxResponseSize: config.MAX_RESPONSE_SIZE ?? null,
+   denyPrivateRanges: config.DENY_PRIVATE_RANGES ?? process.env.NODE_ENV === 'production',
+   denyPrivateRangesConfigured: config.DENY_PRIVATE_RANGES !== undefined,
    maxOutputLength: config.MAX_OUTPUT_LENGTH,
    maxFileReadSize: config.MAX_FILE_READ_SIZE ?? null,
+   initialEnvConfigured: config.INITIAL_ENV !== undefined,
+   virtualProcessInfo: config.PROCESS_INFO ?? null,
+   sandboxTimeoutMs: config.SANDBOX_TIMEOUT_MS ?? null,
    loggingEnabled: config.ENABLE_LOGGING,
    tracingEnabled: config.ENABLE_TRACING,
    pythonEnabled: config.ENABLE_PYTHON,
@@ -77,7 +90,9 @@ export function registerInfoTools(server: McpServer): void {
     'bash_sandbox_read_file',
     'bash_sandbox_mkdir',
     'bash_sandbox_stop',
+    'bash_sandbox_extend_timeout',
     'bash_sandbox_reset',
+    'bash_transform',
     'bash_info',
     'bash_get_cwd',
     'bash_get_env'

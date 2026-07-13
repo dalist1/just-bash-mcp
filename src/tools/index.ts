@@ -4,20 +4,22 @@
  */
 
 import type {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js'
-import {registerExecTools} from './exec-tools.ts'
-import {registerFileTools} from './file-tools.ts'
-import {registerInfoTools} from './info-tools.ts'
-import {registerSandboxTools} from './sandbox-tools.ts'
+import {registerExecTools} from './exec-tools.js'
+import {registerFileTools} from './file-tools.js'
+import {registerInfoTools} from './info-tools.js'
+import {registerSandboxTools} from './sandbox-tools.js'
+import {registerTransformTools} from './transform-tools.js'
 
-export {setJavaScriptToolHandler} from '../config/index.ts'
+export {setJavaScriptToolHandler} from '../config/index.js'
 
 // Re-export bash instance utilities
-export {createBashInstance, defineCommand, getDefenseInDepthBox, getPersistentBash, getPersistentSandbox, resetPersistentBash, resetPersistentSandbox, violationLogger} from './bash-instance.ts'
+export {createBashInstance, defineCommand, getDefenseInDepthBox, getPersistentBash, getPersistentSandbox, resetPersistentBash, resetPersistentSandbox, violationLogger} from './bash-instance.js'
 // Re-export individual registrations for fine-grained control
-export {registerExecTools} from './exec-tools.ts'
-export {registerFileTools} from './file-tools.ts'
-export {registerInfoTools} from './info-tools.ts'
-export {registerSandboxTools} from './sandbox-tools.ts'
+export {registerExecTools} from './exec-tools.js'
+export {registerFileTools} from './file-tools.js'
+export {registerInfoTools} from './info-tools.js'
+export {registerSandboxTools} from './sandbox-tools.js'
+export {registerTransformTools} from './transform-tools.js'
 
 /**
  * Register all MCP tools with the server
@@ -31,6 +33,9 @@ export function registerAllTools(server: McpServer): void {
 
  // Additional persistent sandbox tools
  registerSandboxTools(server)
+
+ // AST transform tools
+ registerTransformTools(server)
 
  // Information and state tools
  registerInfoTools(server)

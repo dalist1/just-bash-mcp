@@ -10,8 +10,8 @@
  * - Network error classes for rich error reporting (handled in exec-tools/sandbox-tools)
  */
 
-import {Bash, type BashOptions, type CustomCommand, DefenseInDepthBox as UpstreamDefenseInDepthBox, InMemoryFs, MountableFs, OverlayFs, ReadWriteFs, Sandbox, type SandboxOptions, defineCommand} from 'just-bash'
-import {bashLogger, buildDefenseInDepthConfig, buildExecutionLimits, buildJavaScriptConfig, buildNetworkConfig, config, type DefenseInDepthConfig, type DefenseInDepthStats, parseMountsConfig, traceCallback, violationLogger} from '../config/index.ts'
+import {Bash, type BashOptions, type CustomCommand, DefenseInDepthBox as UpstreamDefenseInDepthBox, InMemoryFs, type InitialFiles, MountableFs, OverlayFs, ReadWriteFs, Sandbox, type SandboxOptions, defineCommand} from 'just-bash'
+import {bashLogger, buildDefenseInDepthConfig, buildExecutionLimits, buildJavaScriptConfig, buildNetworkConfig, config, type DefenseInDepthConfig, type DefenseInDepthStats, parseMountsConfig, traceCallback, violationLogger} from '../config/index.js'
 
 // ============================================================================
 // Bash Instance Factory
@@ -47,7 +47,7 @@ export function getDefenseInDepthBox(): DefenseInDepthBoxInstance | null {
 /**
  * Get the shared SecurityViolationLogger for querying violation stats.
  */
-export {violationLogger} from '../config/index.ts'
+export {violationLogger} from '../config/index.js'
 
 /**
  * Re-export defineCommand so downstream consumers can create custom commands
@@ -62,13 +62,27 @@ export {defineCommand}
 /**
  * Create a new Bash instance with the given configuration
  */
-export function createBashInstance(files?: Record<string, string>, customCommands?: CustomCommand[], env?: Record<string, string>): Bash {
+export function createBashInstance(files?: InitialFiles, customCommands?: CustomCommand[], env?: Record<string, string>): Bash {
  const networkConfig = buildNetworkConfig()
  const executionLimits = buildExecutionLimits()
  const defenseInDepthConfig = buildDefenseInDepthConfig()
  const javascriptConfig = buildJavaScriptConfig()
+ const initialEnv = config.INITIAL_ENV || env ? {...(config.INITIAL_ENV ?? {}), ...(env ?? {})} : undefined
 
- const baseOptions: BashOptions = {network: networkConfig, executionLimits, files, env, logger: bashLogger, trace: traceCallback, customCommands, commands: config.ALLOWED_COMMANDS, python: config.ENABLE_PYTHON, javascript: javascriptConfig, defenseInDepth: defenseInDepthConfig}
+ const baseOptions: BashOptions = {
+  network: networkConfig,
+  executionLimits,
+  files,
+  env: initialEnv,
+  logger: bashLogger,
+  trace: traceCallback,
+  customCommands,
+  commands: config.ALLOWED_COMMANDS,
+  python: config.ENABLE_PYTHON,
+  javascript: javascriptConfig,
+  defenseInDepth: defenseInDepthConfig,
+  processInfo: config.PROCESS_INFO
+ }
 
  // Check for mountable filesystem configuration
  const mounts = parseMountsConfig()
@@ -129,7 +143,22 @@ let persistentSandbox: Sandbox | null = null
 export async function getPersistentSandbox(): Promise<Sandbox> {
  if (!persistentSandbox) {
   const networkConfig = buildNetworkConfig()
-  const options: SandboxOptions = {cwd: config.INITIAL_CWD, network: networkConfig, maxCallDepth: config.MAX_CALL_DEPTH, maxCommandCount: config.MAX_COMMAND_COUNT, maxLoopIterations: config.MAX_LOOP_ITERATIONS, ...(config.OVERLAY_ROOT && {overlayRoot: config.OVERLAY_ROOT})}
+  const defenseInDepthConfig = buildDefenseInDepthConfig()
+  const javascriptConfig = buildJavaScriptConfig()
+  const options: SandboxOptions = {
+   cwd: config.INITIAL_CWD,
+   env: config.INITIAL_ENV,
+   network: networkConfig,
+   maxCallDepth: config.MAX_CALL_DEPTH,
+   maxCommandCount: config.MAX_COMMAND_COUNT,
+   maxLoopIterations: config.MAX_LOOP_ITERATIONS,
+   defenseInDepth: defenseInDepthConfig,
+   python: config.ENABLE_PYTHON,
+   javascript: javascriptConfig,
+   commands: config.ALLOWED_COMMANDS,
+   timeoutMs: config.SANDBOX_TIMEOUT_MS,
+   ...(config.OVERLAY_ROOT && {overlayRoot: config.OVERLAY_ROOT})
+  }
   persistentSandbox = await Sandbox.create(options)
  }
  return persistentSandbox
